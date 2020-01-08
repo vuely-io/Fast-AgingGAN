@@ -20,7 +20,7 @@ parser.add_argument('--save_iter', default=200, type=int,
 
 @tf.function
 def train_step(model, source_img, true_img, true_condition, false_condition, true_label, gan_loss_weight=2,
-               age_loss_weight=1, feat_loss_weight=5e-4):
+               age_loss_weight=2, feat_loss_weight=5e-4):
     """Single train step function for the AgingGAN.
     Args:
         model: An object that contains a tf keras compiled discriminator model.
