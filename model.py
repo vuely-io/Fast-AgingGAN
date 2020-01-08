@@ -41,6 +41,8 @@ class AgingGAN(object):
             # Otherwise load the GAN setup
             self.age_classifier = keras.models.load_model('models/age_classifier.h5')
             self.age_classifier.trainable = False
+            for layer in self.age_classifier.layers:
+                layer.trainable = False
 
             # Build feature extractor
             self.feature_extractor = self.build_feat_extractor()

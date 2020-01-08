@@ -51,7 +51,7 @@ def train_step(model, source_img, true_img, true_condition, false_condition, tru
 
         # Generator loss
         feat_loss = model.feature_loss(source_img[..., :3], generated_img, weight=feat_loss_weight)
-        age_loss = model.age_classifier(generated_img, true_label, weight=age_loss_weight)
+        age_loss = model.classifier_loss(generated_img, true_label, weight=age_loss_weight)
         adv_loss = gan_loss_weight * 0.5 * tf.keras.losses.MeanSquaredError()(valid, fake_prediction)
         perceptual_loss = feat_loss + age_loss + adv_loss
 
