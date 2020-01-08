@@ -1,4 +1,4 @@
-import keras
+from tensorflow import keras
 import tensorflow as tf
 
 
@@ -31,7 +31,7 @@ class AgingGAN(object):
         self.disc_patch = (patch, patch, 1)
 
         # Number of filters in the first layer of G and D
-        self.gf = 24  # Realtime Image Enhancement GAN Galteri et al.
+        self.gf = 32  # Realtime Image Enhancement GAN Galteri et al.
         self.df = 64
 
         # If training age classifier, load only that into memory
@@ -42,6 +42,9 @@ class AgingGAN(object):
             self.age_classifier = keras.models.load_model('models/age_classifier.h5')
             self.age_classifier.trainable = False
 
+            # Build feature extractor
+            self.feature_extractor = self.build_feat_extractor()
+
             # Build and compile the discriminator
             self.discriminator = self.build_discriminator()
 
@@ -49,23 +52,38 @@ class AgingGAN(object):
             self.generator = self.build_generator()
 
     @tf.function
-    def content_loss(self, real, fake, age_labels):
+    def classifier_loss(self, fake, age_labels, weight=30):
         """
         The content loss for the generator for face aging.
         Args:
-            real: The target domain image
             fake: The generated target domain image.
             age_labels: The age class labels for the classifier loss.
+            weight: Weight given to the loss.
         Returns:
             loss: tf tensor of the sum of feature MSE and age classifier loss.
         """
         fake = (fake + 1.0) / 2.0
-        real = (real + 1.0) / 2.0
-        fake_labels, fake_features = self.age_classifier(fake)
-        _, real_features = self.age_classifier(real)
-        feature_loss = tf.keras.losses.MeanSquaredError()(real_features, fake_features)
-        age_loss = tf.keras.losses.SparseCategoricalCrossentropy()(age_labels, fake_labels)
-        return feature_loss + age_loss
+        fake_labels = self.age_classifier(fake)
+        age_loss = weight * tf.keras.losses.SparseCategoricalCrossentropy()(age_labels, fake_labels)
+        return age_loss
+
+    @tf.function
+    def feature_loss(self, real, fake, weight=5e-5):
+        """
+        The feature loss for the face Aging, preserves identity
+        and is also called the Identity Preserving Module
+        Args:
+            real: The image that was input to the model.
+            fake: The generated aged image the generator gave.
+            weight: Weight given to the loss.
+
+        """
+        fake = keras.applications.vgg16.preprocess_input((fake + 1.0) / 2.0)
+        real = keras.applications.vgg16.preprocess_input((real + 1.0) / 2.0)
+        fake_features = self.feature_extractor(fake)
+        real_features = self.feature_extractor(real)
+        feature_loss = weight * tf.keras.losses.MeanSquaredError()(real_features, fake_features)
+        return feature_loss
 
     def build_age_classifier(self, num_classes):
         """
@@ -85,7 +103,23 @@ class AgingGAN(object):
         x = keras.layers.Dense(num_classes, activation='softmax')(x)
 
         # Compile the model
-        model = keras.models.Model(inputs, [x, features])
+        model = keras.models.Model(inputs, x)
+
+        return model
+
+    def build_feat_extractor(self):
+        """
+        Builds a VGG16 feature extractor, extracts features from the last conv layer in vgg16.
+        """
+        # Get the vgg network. Extract features from Block 5, last convolution.
+        vgg = keras.applications.VGG19(weights="imagenet", input_shape=(self.img_dim, self.img_dim, 3),
+                                       include_top=False)
+        vgg.trainable = False
+        for layer in vgg.layers:
+            layer.trainable = False
+
+        # Create model and compile
+        model = keras.models.Model(inputs=vgg.input, outputs=vgg.get_layer("block5_conv4").output)
 
         return model
 
@@ -176,8 +210,7 @@ class AgingGAN(object):
             Returns:
                 u: Upsampled input by a factor of 2.
             """
-            u = keras.layers.Upsampling2D(size=(2, 2))(layer_input)
-            u = keras.layers.Conv2D(filters, kernel_size=3, strides=1, padding='same')(u)
+            u = keras.layers.Conv2DTranspose(filters, kernel_size=3, strides=2, padding='same')(layer_input)
             u = keras.layers.LeakyReLU()(u)
             return u
 
@@ -206,9 +239,6 @@ class AgingGAN(object):
         # Upsampling
         x = deconv2d(x, self.gf)
         x = deconv2d(x, self.gf)
-
-        # Add face image (only learn the aging features in the residuals)
-        x = keras.layers.Add()([x, c1])
 
         # Generate output
         gen_hr = keras.layers.Conv2D(3, kernel_size=3, strides=1, padding='same', activation='tanh')(x)

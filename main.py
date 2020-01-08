@@ -19,7 +19,8 @@ parser.add_argument('--save_iter', default=200, type=int,
 
 
 @tf.function
-def train_step(model, source_img, true_img, true_condition, false_condition, true_label):
+def train_step(model, source_img, true_img, true_condition, false_condition, true_label, gan_loss_weight=2,
+               age_loss_weight=1, feat_loss_weight=5e-4):
     """Single train step function for the AgingGAN.
     Args:
         model: An object that contains a tf keras compiled discriminator model.
@@ -28,13 +29,14 @@ def train_step(model, source_img, true_img, true_condition, false_condition, tru
         true_condition: The target age condition.
         false_condition: The non-target age condition.
         true_label: The class label of the target domain.
+        gan_loss_weight: The weight for the disc and adversarial losses.
+        age_loss_weight: The weight for the age losses.
+        feat_loss_weight: The weight for the feature losses.
     Returns:
         d_loss: The mean loss of the discriminator.
     """
-    valid = tf.ones((source_img.shape[0],) + model.disc_patch) - tf.random.uniform(
-        (source_img.shape[0],) + model.disc_patch) * 0.2
-    fake = tf.ones((source_img.shape[0],) + model.disc_patch) * tf.random.uniform(
-        (source_img.shape[0],) + model.disc_patch) * 0.2
+    valid = tf.ones((source_img.shape[0],) + model.disc_patch)
+    fake = tf.zeros((source_img.shape[0],) + model.disc_patch)
 
     with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
         # From input image generate older age version version
@@ -48,17 +50,18 @@ def train_step(model, source_img, true_img, true_condition, false_condition, tru
         fake_prediction = model.discriminator([generated_img, true_condition])
 
         # Generator loss
-        content_loss = model.content_loss(source_img[..., :3], generated_img, true_label)
-        adv_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(valid, fake_prediction)
-        perceptual_loss = content_loss + adv_loss
+        feat_loss = model.feature_loss(source_img[..., :3], generated_img, weight=feat_loss_weight)
+        age_loss = model.age_classifier(generated_img, true_label, weight=age_loss_weight)
+        adv_loss = gan_loss_weight * 0.5 * tf.keras.losses.MeanSquaredError()(valid, fake_prediction)
+        perceptual_loss = feat_loss + age_loss + adv_loss
 
         # Discriminator loss
-        valid_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(valid, valid_prediction)
-        false_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(fake, false_prediction)
-        fake_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(fake, fake_prediction)
+        valid_loss = tf.keras.losses.MeanSquaredError()(valid, valid_prediction)
+        false_loss = tf.keras.losses.MeanSquaredError()(fake, false_prediction)
+        fake_loss = tf.keras.losses.MeanSquaredError()(fake, fake_prediction)
 
-        # Avergae out the loss
-        d_loss = 0.5 * (valid_loss + 0.5 * (false_loss + fake_loss))
+        # Average out the loss
+        d_loss = 0.5 * (valid_loss + 0.5 * (false_loss + fake_loss)) * gan_loss_weight
 
     # Backprop on Generator
     gen_grads = gen_tape.gradient(perceptual_loss, model.generator.trainable_variables)
@@ -68,7 +71,7 @@ def train_step(model, source_img, true_img, true_condition, false_condition, tru
     disc_grads = disc_tape.gradient(d_loss, model.discriminator.trainable_variables)
     model.disc_optimizer.apply_gradients(zip(disc_grads, model.discriminator.trainable_variables))
 
-    return d_loss, adv_loss, content_loss
+    return d_loss, adv_loss, age_loss, feat_loss
 
 
 def train(model, dataset, log_iter, writer):
@@ -86,16 +89,17 @@ def train(model, dataset, log_iter, writer):
     with writer.as_default():
         # Iterate over dataset
         for source_conditioned_img, true_img, true_condition, false_condition, true_label in dataset:
-            disc_loss, adv_loss, content_loss = train_step(model,
-                                                           source_conditioned_img,
-                                                           true_img,
-                                                           true_condition,
-                                                           false_condition,
-                                                           true_label)
+            disc_loss, adv_loss, age_loss, feat_loss = train_step(model,
+                                                                  source_conditioned_img,
+                                                                  true_img,
+                                                                  true_condition,
+                                                                  false_condition,
+                                                                  true_label)
             # Log tensorboard summaries if log iteration is reached.
             if model.iterations % log_iter == 0:
                 tf.summary.scalar('Adversarial Loss', adv_loss, step=model.iterations)
-                tf.summary.scalar('Content Loss', content_loss, step=model.iterations)
+                tf.summary.scalar('Age Loss', age_loss, step=model.iterations)
+                tf.summary.scalar('Feature Loss', feat_loss, step=model.iterations)
                 tf.summary.scalar('Discriminator Loss', disc_loss, step=model.iterations)
                 tf.summary.image('Input Image', tf.cast(255 * (source_conditioned_img[..., :3] + 1.0) / 2.0, tf.uint8),
                                  step=model.iterations)
@@ -121,7 +125,7 @@ def classifier_train_step(model, img, label):
 
     with tf.GradientTape() as tape:
         # Given image, predict label
-        predicted_labels, _ = model.age_classifier(img)
+        predicted_labels = model.age_classifier(img)
 
         # Calculate the loss
         loss = tf.losses.SparseCategoricalCrossentropy(from_logits=False)(label, predicted_labels)
