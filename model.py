@@ -212,7 +212,8 @@ class AgingGAN(object):
             Returns:
                 u: Upsampled input by a factor of 2.
             """
-            u = keras.layers.Conv2DTranspose(filters, kernel_size=3, strides=2, padding='same')(layer_input)
+            u = keras.layers.Conv2D(filters * 4, kernel_size=3, strides=2, padding='same')(layer_input)
+            u = tf.nn.depth_to_space(u, 2)
             u = keras.layers.LeakyReLU()(u)
             return u
 

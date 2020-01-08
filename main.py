@@ -35,8 +35,10 @@ def train_step(model, source_img, true_img, true_condition, false_condition, tru
     Returns:
         d_loss: The mean loss of the discriminator.
     """
-    valid = tf.ones((source_img.shape[0],) + model.disc_patch)
-    fake = tf.zeros((source_img.shape[0],) + model.disc_patch)
+    valid = tf.ones((source_img.shape[0],) + model.disc_patch) - tf.random.uniform(
+        (source_img.shape[0],) + model.disc_patch) * 0.2
+    fake = tf.ones((source_img.shape[0],) + model.disc_patch) * tf.random.uniform(
+        (source_img.shape[0],) + model.disc_patch) * 0.2
 
     with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
         # From input image generate older age version version
@@ -52,13 +54,13 @@ def train_step(model, source_img, true_img, true_condition, false_condition, tru
         # Generator loss
         feat_loss = model.feature_loss(source_img[..., :3], generated_img, weight=feat_loss_weight)
         age_loss = model.classifier_loss(generated_img, true_label, weight=age_loss_weight)
-        adv_loss = gan_loss_weight * 0.5 * tf.keras.losses.MeanSquaredError()(valid, fake_prediction)
+        adv_loss = gan_loss_weight * 0.5 * tf.keras.losses.BinaryCrossEntropy(from_logits=True)(valid, fake_prediction)
         perceptual_loss = feat_loss + age_loss + adv_loss
 
         # Discriminator loss
-        valid_loss = tf.keras.losses.MeanSquaredError()(valid, valid_prediction)
-        false_loss = tf.keras.losses.MeanSquaredError()(fake, false_prediction)
-        fake_loss = tf.keras.losses.MeanSquaredError()(fake, fake_prediction)
+        valid_loss = tf.keras.losses.BinaryCrossEntropy(from_logits=True)(valid, valid_prediction)
+        false_loss = tf.keras.losses.BinaryCrossEntropy(form_logits=True)(fake, false_prediction)
+        fake_loss = tf.keras.losses.BinaryCrossEntropy(form_logits=True)(fake, fake_prediction)
 
         # Average out the loss
         d_loss = 0.5 * (valid_loss + 0.5 * (false_loss + fake_loss)) * gan_loss_weight
