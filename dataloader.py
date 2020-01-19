@@ -1,6 +1,5 @@
 from utils import read_image_label_txt, read_image_label_pair_txt
 import tensorflow as tf
-import random
 
 
 class DataLoaderAge(object):
@@ -57,7 +56,7 @@ class DataLoaderAge(object):
         returns:
             dataset: A tf dataset object.
         """
-
+        # Make a dataset from the image paths and their labels
         dataset = tf.data.Dataset.from_tensor_slices((self.image_paths, self.image_labels))
 
         # Read the images
@@ -85,25 +84,24 @@ class DataLoaderGAN(object):
         Returns:
             None
         """
+        self.source_images, _ = read_image_label_txt(image_dir, text_dir)
         self.label_pairs, self.image_pairs = read_image_label_pair_txt(image_dir, text_dir)
-        self.source_images = [x[0] for x in self.image_pairs]
-        random.shuffle(self.source_images)
         self.image_size = image_size
 
-    def _parse_image(self, source_path, image_paths, image_labels):
+    def _parse_image(self, source_image, image_paths, image_labels):
         """
         Function that loads the images given the path.
         Args:
-            source_path: The path to the source image.
-            image_path: List of path to target and non target-images.
-            image_labels: List of targer and non-target image age labels.
+            source_image: Path to source images.
+            image_paths: List of path to target and non target-images.
+            image_labels: List of target and non-target image age labels.
         Returns:
             source_image: tf tensor of the source image.
             true_image: tf tensor of the target domain image.
             true_label: tf tensor of true image class label.
             false_label: tf tensor of false image class label.
         """
-        source_image = tf.io.read_file(source_path)
+        source_image = tf.io.read_file(source_image)
         true_image = tf.io.read_file(image_paths[0])
 
         source_image = tf.image.decode_jpeg(source_image, channels=3)
@@ -114,26 +112,6 @@ class DataLoaderGAN(object):
 
         true_label = image_labels[0]
         false_label = image_labels[1]
-
-        return source_image, true_image, true_label, false_label
-
-    def _rescale(self, source_image, true_image, true_label, false_label):
-        """
-        Function that rescales the pixel values to the -1 to 1 range.
-        For use with the generator output tanh function.
-        Args:
-            source_image: tf tensor of the source image.
-            true_image: tf tensor of the target domain image.
-            true_label: tf tensor of true image class label.
-            false_label: tf tensor of false image class label.
-        Returns:
-            source_image: tf tensor of the source image, rescaled to -1 to 1 values..
-            true_image: tf tensor of the target domain image, rescaled to -1 to 1 values.
-            true_label: tf tensor of true image class label.
-            false_label: tf tensor of false image class label.
-        """
-        source_image = source_image * 2.0 - 1.0
-        true_image = true_image * 2.0 - 1.0
 
         return source_image, true_image, true_label, false_label
 
@@ -195,7 +173,7 @@ class DataLoaderGAN(object):
         Returns:
             dataset: A tf dataset object.
         """
-        # Values in range -1 - 1
+        # Values in range 0 to 1
         # Generate tf dataset from high res image paths.
         dataset = tf.data.Dataset.from_tensor_slices((self.source_images, self.image_pairs, self.label_pairs))
 
@@ -204,9 +182,6 @@ class DataLoaderGAN(object):
 
         # Resize the image
         dataset = dataset.map(self._resize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-        # Rescale the values in the input
-        dataset = dataset.map(self._rescale, num_parallel_calls=tf.data.experimental.AUTOTUNE)
 
         # Condition the age category on the image
         dataset = dataset.map(self._condition, num_parallel_calls=tf.data.experimental.AUTOTUNE)

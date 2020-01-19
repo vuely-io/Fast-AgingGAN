@@ -64,8 +64,7 @@ class AgingGAN(object):
         Returns:
             loss: tf tensor of the sum of feature MSE and age classifier loss.
         """
-        fake = (fake + 1.0) / 2.0
-        fake_labels = self.age_classifier(fake)
+        fake_labels = self.age_classifier((fake + 1.0) / 2.0)
         age_loss = weight * tf.keras.losses.SparseCategoricalCrossentropy()(age_labels, fake_labels)
         return age_loss
 
@@ -80,8 +79,8 @@ class AgingGAN(object):
             weight: Weight given to the loss.
 
         """
-        fake = keras.applications.vgg16.preprocess_input((fake + 1.0) / 2.0)
-        real = keras.applications.vgg16.preprocess_input((real + 1.0) / 2.0)
+        fake = keras.applications.vgg16.preprocess_input(127.5 * (fake + 1.0))
+        real = keras.applications.vgg16.preprocess_input(real * 255)
         fake_features = self.feature_extractor(fake)
         real_features = self.feature_extractor(real)
         feature_loss = weight * tf.keras.losses.MeanSquaredError()(real_features, fake_features)
@@ -137,20 +136,71 @@ class AgingGAN(object):
                 new_v += divisor
             return new_v
 
-        def residual_block(inputs, filters):
+        def residual_block(inputs, filters, block_id, expansion=6, stride=1, alpha=1.0):
             """Inverted Residual block that uses depth wise convolutions for parameter efficiency.
             Args:
                 inputs: The input feature map.
                 filters: Number of filters in each convolution in the block.
+                block_id: An integer specifier for the id of the block in the graph.
+                expansion: Channel expansion factor.
+                stride: The stride of the convolution.
+                alpha: Depth expansion factor.
             Returns:
                 x: The output of the inverted residual block.
             """
-            u = keras.layers.Conv2D(filters, kernel_size=3, stride=1, padding='same')(inputs)
-            u = keras.layers.BatchNormalization()(u)
-            u = keras.layers.Conv2D(filters, kernel_size=3, stride=1, padding='same')(u)
-            u = keras.layers.BatchNormalization()(u)
-            u = keras.layers.Add()([inputs, u])
-            return u
+            channel_axis = 1 if keras.backend.image_data_format() == 'channels_first' else -1
+
+            in_channels = keras.backend.int_shape(inputs)[channel_axis]
+            pointwise_conv_filters = int(filters * alpha)
+            pointwise_filters = _make_divisible(pointwise_conv_filters, 8)
+            x = inputs
+            prefix = 'block_{}_'.format(block_id)
+
+            if block_id:
+                # Expand
+                x = keras.layers.Conv2D(expansion * in_channels,
+                                        kernel_size=1,
+                                        padding='same',
+                                        use_bias=True,
+                                        activation=None,
+                                        name=prefix + 'expand')(x)
+                x = keras.layers.BatchNormalization(axis=channel_axis,
+                                                    epsilon=1e-3,
+                                                    momentum=0.999,
+                                                    name=prefix + 'expand_BN')(x)
+                x = keras.layers.Activation('relu', name=prefix + 'expand_relu')(x)
+            else:
+                prefix = 'expanded_conv_'
+
+            # Depthwise
+            x = keras.layers.DepthwiseConv2D(kernel_size=3,
+                                             strides=stride,
+                                             activation=None,
+                                             use_bias=True,
+                                             padding='same' if stride == 1 else 'valid',
+                                             name=prefix + 'depthwise')(x)
+            x = keras.layers.BatchNormalization(axis=channel_axis,
+                                                epsilon=1e-3,
+                                                momentum=0.999,
+                                                name=prefix + 'depthwise_BN')(x)
+
+            x = keras.layers.Activation('relu', name=prefix + 'depthwise_relu')(x)
+
+            # Project
+            x = keras.layers.Conv2D(pointwise_filters,
+                                    kernel_size=1,
+                                    padding='same',
+                                    use_bias=True,
+                                    activation=None,
+                                    name=prefix + 'project')(x)
+            x = keras.layers.BatchNormalization(axis=channel_axis,
+                                                epsilon=1e-3,
+                                                momentum=0.999,
+                                                name=prefix + 'project_BN')(x)
+
+            if in_channels == pointwise_filters and stride == 1:
+                return keras.layers.Add(name=prefix + 'add')([inputs, x])
+            return x
 
         def deconv2d(layer_input, filters):
             """Upsampling layer to increase height and width of the input.
