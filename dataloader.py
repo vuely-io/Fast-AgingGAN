@@ -1,193 +1,95 @@
 from utils import read_image_label_txt, read_image_label_pair_txt
-import tensorflow as tf
+
+from PIL import Image
+import torch
+from torch.utils.data import Dataset
 
 
-class DataLoaderAge(object):
-    """Data Loader for the age classifier, that prepares a tf data object for training."""
+class DataLoaderAge(Dataset):
+    """DataSet for the age classifier."""
 
-    def __init__(self, image_dir, text_file, image_size):
-        """
-        Initializes the dataloader.
+    def __init__(self, image_dir, text_file, image_size, transforms):
+        """Initializes the data loader for training the age classifier
         Args:
-            image_dir: The path to the directory containing high resolution images.
-            text_file: Integer, filename and age labe text file.
-            image_size: The size of images to train on.
-        Returns:
-            The dataloader object.
+            image_dir: str, path to directory where images are located.
+            text_file: str, path to the directory with data split txt files.
+            image_size: tuple, (Height, Width), size of images to train on.
+            transforms: torchvision transforms, image transforms to apply.
         """
-        self.image_paths, self.image_labels = read_image_label_txt(image_dir, text_file)
+        self.image_paths, self.image_labels = read_image_label_pair_txt(image_dir, text_file)
         self.image_size = image_size
+        self.transforms = transforms
 
-    def _parse_image(self, image_path, image_label):
-        """
-        Function that loads the images given the path.
-        Args:
-            image_path: Path to an image file.
-            image_label: Integer label of age category.
-        Returns:
-            image: A tf tensor of the loaded image.
-            image_label: A tf tensor of the loaded age label.
-        """
+    def __len__(self):
+        return len(self.image_paths)
 
-        image = tf.io.read_file(image_path)
-        image = tf.image.decode_jpeg(image, channels=3)
-        image = tf.image.convert_image_dtype(image, tf.float32)
-
-        return image, image_label
-
-    def _resize_image(self, image, label):
-        """Resizes the given image
-        Args:
-            image: tf tensor to resize.
-            label: Image class label.
-        Returns:
-            image: tf tensor of resized image.
-            label: Image class label.
-        """
-
-        image = tf.image.resize(image, [self.image_size, self.image_size])
-
-        return image, label
-
-    def dataset(self, batch_size):
+    def __getitem__(self, idx):
         """
         Args:
-            batch_size: The batch size of the loaded data.
-        returns:
-            dataset: A tf dataset object.
+            idx: The index of the image and label to read.
         """
-        # Make a dataset from the image paths and their labels
-        dataset = tf.data.Dataset.from_tensor_slices((self.image_paths, self.image_labels))
+        image = Image.open(self.image_paths[idx])
+        image = image.resize(self.image_size)
+        age = int(self.image_labels[idx])
 
-        # Read the images
-        dataset = dataset.map(self._parse_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        if self.transforms is not None:
+            image = self.transforms(image)
 
-        # Resize the image
-        dataset = dataset.map(self._resize_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-        # Batch the image
-        dataset = dataset.batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
-
-        return dataset
+        return image, age
 
 
-class DataLoaderGAN(object):
-    """Data Loader for the SR GAN, that prepares a tf data object for training."""
+class DataLoaderGAN(Dataset):
+    """Dataset for the face aging GAN"""
 
-    def __init__(self, image_dir, text_dir, image_size):
+    def __init__(self, image_dir, text_dir, image_size, transforms):
         """
-        Initializes the dataloader.
         Args:
-            image_dir: The path to the directory containing high resolution images.
-            text_dir: Path to the directory with the all the image list split text files.
-            image_size: Size of the images to train on.
-        Returns:
-            None
+            image_dir: str, path to the directory with face images.
+            text_dir: str, path to the directory with data split text files.
+            image_size: tuple (H, W), the spatial size of the image.
+            transforms: torchvision transforms, transforms to apply to the
+                image.
         """
         self.source_images, _ = read_image_label_txt(image_dir, text_dir)
         self.label_pairs, self.image_pairs = read_image_label_pair_txt(image_dir, text_dir)
         self.image_size = image_size
+        self.transforms = transforms
 
-    def _parse_image(self, source_image, image_paths, image_labels):
+    def _condition_images(self, source_image, true_label, false_label):
         """
-        Function that loads the images given the path.
         Args:
-            source_image: Path to source images.
-            image_paths: List of path to target and non target-images.
-            image_labels: List of target and non-target image age labels.
-        Returns:
-            source_image: tf tensor of the source image.
-            true_image: tf tensor of the target domain image.
-            true_label: tf tensor of true image class label.
-            false_label: tf tensor of false image class label.
+            source_image: tensor, torch tensor of the input image to the
+                generator.
+            true_label: int, the integer category label of the target domain.
+            false_label: int, the integer category label of the non-target
+                domain images.
         """
-        source_image = tf.io.read_file(source_image)
-        true_image = tf.io.read_file(image_paths[0])
+        true_condition = torch.ones(self.image_size) * true_label
+        false_condition = torch.ones([x // 2 for x in self.image_size]) * false_label
 
-        source_image = tf.image.decode_jpeg(source_image, channels=3)
-        true_image = tf.image.decode_jpeg(true_image, channels=3)
+        source_image_conditioned = torch.stack([source_image, true_condition], dim=1)
+        true_condition = torch.ones([x // 2 for x in self.image_size]) * true_label
 
-        source_image = tf.image.convert_image_dtype(source_image, tf.float32)
-        true_image = tf.image.convert_image_dtype(true_image, tf.float32)
+        return source_image_conditioned, true_condition, false_condition
 
-        true_label = image_labels[0]
-        false_label = image_labels[1]
+    def __len__(self):
+        return len(self.source_images)
 
-        return source_image, true_image, true_label, false_label
-
-    def _resize(self, source_image, true_image, true_label, false_label):
+    def __getitem__(self, idx):
         """
-        Function that resizes the image.
         Args:
-            source_image: tf tensor of the source image.
-            true_image: tf tensor of the target domain image.
-            true_label: tf tensor of true image class label.
-            false_label: tf tensor of false image class label.
-        Returns:
-            source_image: tf tensor of the source image, resized.
-            true_image: tf tensor of the target domain image, resized.
-            true_label: tf tensor of true image class label.
-            false_label: tf tensor of false image class label.
+            idx: Index of items to retrieve.
         """
-        source_image = tf.image.resize(source_image, [self.image_size, self.image_size])
-        true_image = tf.image.resize(true_image, [self.image_size, self.image_size])
+        source_image = Image.open(self.source_images[idx]).resize(self.image_size)
+        true_image = Image.open(self.image_pairs[idx][0]).resize(self.image_size)
 
-        return source_image, true_image, true_label, false_label
+        true_label = self.label_pairs[0]
+        false_label = self.label_pairs[1]
 
-    def _condition(self, source_image, true_image, true_label, false_label):
-        """
-        Creates image conditioning for aging.
-        Args:
-            source_image: tf tensor of the source image.
-            true_image: tf tensor of the target domain image.
-            true_label: tf tensor of true image class label.
-            false_label: tf tensor of false image class label.
-        Returns:
-            source_conditioned_image: The source image, with depthwise concatenated age condition.
-            true_image: tf tensor of the target domain image.
-            true_condition: tf tensor of the target domain age labels.
-            false_condition: tf tensor of non target domain age labels.
-            true_label: tf tensor of true image class label.
-        """
-        true_condition = tf.tile([true_label], [self.image_size * self.image_size])
-        true_condition = tf.reshape(true_condition, [self.image_size, self.image_size, 1])
-        true_condition = tf.cast(true_condition, tf.float32)
+        if self.transforms is not None:
+            source_image = self.transforms(source_image)
+            true_image = self.transforms(true_image)
 
-        false_condition = tf.tile([false_label], [self.image_size * self.image_size // 4])
-        false_condition = tf.reshape(false_condition, [self.image_size // 2, self.image_size // 2, 1])
-        false_condition = tf.cast(false_condition, tf.float32)
+        src_image_cond, true_condition, false_condition = self._condition_images(source_image, true_label, false_label)
 
-        source_conditioned_image = tf.concat([source_image, true_condition], axis=-1)
-
-        true_condition = tf.tile([true_label], [self.image_size * self.image_size // 4])
-        true_condition = tf.reshape(true_condition, [self.image_size // 2, self.image_size // 2, 1])
-        true_condition = tf.cast(true_condition, tf.float32)
-
-        return source_conditioned_image, true_image, true_condition, false_condition, true_label
-
-    def dataset(self, batch_size):
-        """
-        Returns a tf dataset object with specified mappings.
-        Args:
-            batch_size: Int, The number of elements in a batch returned by the dataset.
-        Returns:
-            dataset: A tf dataset object.
-        """
-        # Values in range 0 to 1
-        # Generate tf dataset from high res image paths.
-        dataset = tf.data.Dataset.from_tensor_slices((self.source_images, self.image_pairs, self.label_pairs))
-
-        # Read the images
-        dataset = dataset.map(self._parse_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-        # Resize the image
-        dataset = dataset.map(self._resize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-        # Condition the age category on the image
-        dataset = dataset.map(self._condition, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-        # Batch the input, drop remainder to get a defined batch size.
-        # Prefetch the data for optimal GPU utilization.
-        dataset = dataset.batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
-
-        return dataset
+        return src_image_cond, true_image, true_condition, false_condition, true_label
