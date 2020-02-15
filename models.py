@@ -1,4 +1,6 @@
+import torch
 import torch.nn as nn
+from torchvision.models import resnet18
 
 
 class InvertedResidual(nn.Module):
@@ -95,3 +97,58 @@ class MobileGenerator(nn.Module):
         x = self.final_conv(self.upconv2(x))
 
         return x
+
+
+class Discriminator(nn.Module):
+    def __init__(self):
+        super(Discriminator, self).__init__()
+        self.lrelu = nn.LeakyReLU(0.2)
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=4, stride=2)
+        self.conv2 = nn.Conv2d(69, 128, kernel_size=4, stride=2)
+        self.bn2 = nn.BatchNorm2d(128, eps=0.001, track_running_stats=True)
+        self.conv3 = nn.Conv2d(128, 256, kernel_size=4, stride=2)
+        self.bn3 = nn.BatchNorm2d(256, eps=0.001, track_running_stats=True)
+        self.conv4 = nn.Conv2d(256, 512, kernel_size=4, stride=2)
+        self.bn4 = nn.BatchNorm2d(512, eps=0.001, track_running_stats=True)
+        self.conv5 = nn.Conv2d(512, 512, kernel_size=4, stride=2)
+
+    def forward(self, x, condition):
+        """
+        Args:
+            x: Tensor, the input image tensor for the discriminator.
+            condition: Tensor, the age conditionality.
+        """
+        x = self.lrelu(self.conv1(x))
+        x = torch.cat((x, condition), 1)
+        x = self.lrelu(self.bn2(self.conv2(x)))
+        x = self.lrelu(self.bn3(self.conv3(x)))
+        x = self.lrelu(self.bn4(self.conv4(x)))
+        x = self.conv5(x)
+        return x
+
+
+class AgeClassifier(nn.Module):
+    def __init__(self):
+        super(AgeClassifier, self).__init__()
+        self.model = resnet18(pretrained=True, progress=True, num_classes=5)
+
+    def forward(self, x):
+        """
+        Args:
+            x: Tesnor, the input to extract features from.
+        """
+        return self.model(x)
+
+
+class FeatureExtractor(nn.Module):
+    def __init__(self):
+        super(FeatureExtractor, self).__init__()
+        self.model = resnet18(pretrained=True, progress=True)
+        self.model = nn.Sequential(*list(self.model.children())[:-2])
+
+    def forward(self, x):
+        """
+        Args:
+            x: Tensor, the input to extract features from.
+        """
+        return self.model(x)

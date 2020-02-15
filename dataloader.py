@@ -8,15 +8,15 @@ from torch.utils.data import Dataset
 class DataLoaderAge(Dataset):
     """DataSet for the age classifier."""
 
-    def __init__(self, image_dir, text_file, image_size, transforms):
+    def __init__(self, image_dir, text_dir, image_size, transforms=None, is_train=True):
         """Initializes the data loader for training the age classifier
         Args:
             image_dir: str, path to directory where images are located.
-            text_file: str, path to the directory with data split txt files.
+            text_dir: str, path to the directory with data split txt files.
             image_size: tuple, (Height, Width), size of images to train on.
             transforms: torchvision transforms, image transforms to apply.
         """
-        self.image_paths, self.image_labels = read_image_label_pair_txt(image_dir, text_file)
+        self.image_paths, self.image_labels = read_image_label_pair_txt(image_dir, text_dir, is_train)
         self.image_size = image_size
         self.transforms = transforms
 
@@ -41,7 +41,7 @@ class DataLoaderAge(Dataset):
 class DataLoaderGAN(Dataset):
     """Dataset for the face aging GAN"""
 
-    def __init__(self, image_dir, text_dir, image_size, transforms):
+    def __init__(self, image_dir, text_dir, image_size, transforms=None, is_train=True):
         """
         Args:
             image_dir: str, path to the directory with face images.
@@ -51,7 +51,7 @@ class DataLoaderGAN(Dataset):
                 image.
         """
         self.source_images, _ = read_image_label_txt(image_dir, text_dir)
-        self.label_pairs, self.image_pairs = read_image_label_pair_txt(image_dir, text_dir)
+        self.label_pairs, self.image_pairs = read_image_label_pair_txt(image_dir, text_dir, is_train)
         self.image_size = image_size
         self.transforms = transforms
 
@@ -92,4 +92,9 @@ class DataLoaderGAN(Dataset):
 
         src_image_cond, true_condition, false_condition = self._condition_images(source_image, true_label, false_label)
 
-        return src_image_cond, true_image, true_condition, false_condition, true_label
+        dataset = {'src_image_cond': src_image_cond,
+                   'true_image': true_image,
+                   'true_cond': true_condition,
+                   'false_cond': false_condition,
+                   'true_label': true_label}
+        return dataset

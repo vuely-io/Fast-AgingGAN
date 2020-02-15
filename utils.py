@@ -3,8 +3,11 @@ import random
 import os
 
 
-def read_image_label_txt(image_dir, txt_dir):
-    txt_file = os.path.join(txt_dir, 'train.txt')
+def read_image_label_txt(image_dir, txt_dir, is_train=True):
+    if is_train:
+        txt_file = os.path.join(txt_dir, 'train.txt')
+    else:
+        txt_file = os.path.join(txt_dir, 'train.txt')
     image_paths, image_labels = [], []
     with open(txt_file) as fr:
         lines = fr.readlines()
@@ -17,8 +20,11 @@ def read_image_label_txt(image_dir, txt_dir):
     return image_paths, image_labels
 
 
-def read_image_label_pair_txt(image_dir, txt_dir):
-    label_pair_file = os.path.join(txt_dir, 'train_label_pair.txt')
+def read_image_label_pair_txt(image_dir, txt_dir, is_train=True):
+    if is_train:
+        label_pair_file = os.path.join(txt_dir, 'train_label_pair.txt')
+    else:
+        label_pair_file = os.path.join(txt_dir, 'test_label_pair.txt')
     with open(label_pair_file, 'r') as f:
         lines = f.readlines()
     lines = [line.strip() for line in lines]
