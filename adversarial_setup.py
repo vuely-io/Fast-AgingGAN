@@ -1,3 +1,4 @@
+import os
 from collections import OrderedDict
 
 import pytorch_lightning as pl
@@ -74,6 +75,17 @@ class GenAdvNet(pl.LightningModule):
         self.generator = MobileGenerator(num_blocks=6)
         self.discriminator = Discriminator()
         self.classifier = AgeClassifier()
+
+        # TODO find a nicer way to do this:
+        ckpt_dir = './lightning_logs/version_0/checkpoints/'
+        ckpt = os.path.join(ckpt_dir, os.listdir(ckpt_dir)[0])
+        ckpt = torch.load(ckpt)
+        new_state_dict = {}
+        for k, v in ckpt['state_dict'].items():
+            # Remove the mode.model repetition from the key name
+            new_state_dict[k[6:]] = v
+
+        self.classifier.load_state_dict(new_state_dict)
         self.features = FeatureExtractor()
         for p in self.classifier.parameters():
             p.requires_grad = False
@@ -143,6 +155,12 @@ class GenAdvNet(pl.LightningModule):
                 'log': tqdm_dict
             })
             return output
+
+    def on_epoch_end(self):
+        if not os.path.exists('model_weights'):
+            os.makedirs('model_weights')
+        torch.save(self.generator.state_dict(), 'model_weights/gen.pth')
+        torch.save(self.discriminator.state_dict(), 'model_weights/disc.pth')
 
     def configure_optimizers(self):
         return [torch.optim.AdamW(self.parameters(), lr=1e-4, weight_decay=1e-3),

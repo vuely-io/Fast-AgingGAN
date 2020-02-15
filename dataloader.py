@@ -55,7 +55,7 @@ class DataLoaderGAN(Dataset):
             image_size: tuple (H, W), the spatial size of the image.
                 image.
         """
-        self.source_images, _ = read_image_label_txt(image_dir, text_dir)
+        self.source_images, _ = read_image_label_txt(image_dir, text_dir, is_train)
         self.label_pairs, self.image_pairs = read_image_label_pair_txt(image_dir, text_dir, is_train)
         self.image_size = image_size
         self.transforms = transforms.Compose([
@@ -81,7 +81,7 @@ class DataLoaderGAN(Dataset):
         return source_image_conditioned, true_condition, false_condition
 
     def __len__(self):
-        return len(self.source_images)
+        return len(self.image_pairs)
 
     def __getitem__(self, idx):
         """

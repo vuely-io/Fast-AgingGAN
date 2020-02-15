@@ -7,7 +7,7 @@ def read_image_label_txt(image_dir, txt_dir, is_train=True):
     if is_train:
         txt_file = os.path.join(txt_dir, 'train.txt')
     else:
-        txt_file = os.path.join(txt_dir, 'train.txt')
+        txt_file = os.path.join(txt_dir, 'test.txt')
     image_paths, image_labels = [], []
     with open(txt_file) as fr:
         lines = fr.readlines()
