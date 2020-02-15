@@ -64,7 +64,7 @@ class MobileGenerator(nn.Module):
         super(MobileGenerator, self).__init__()
         self.num_blocks = num_blocks
 
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=2, padding=1)
+        self.conv1 = nn.Conv2d(4, 16, kernel_size=3, stride=2, padding=1)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1)
         self.bn1 = nn.BatchNorm2d(16)
         self.bn2 = nn.BatchNorm2d(32)
@@ -91,9 +91,7 @@ class MobileGenerator(nn.Module):
         for layer_num in range(self.num_blocks):
             x = self.vertebrae[layer_num](x)
         x = self.bn3(self.trunk_conv(x))
-        print(x.shape)
         x = self.conv_exp1(self.upconv1(x))
-        print(x.shape)
         x = self.final_conv(self.upconv2(x))
 
         return x
@@ -103,8 +101,8 @@ class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
         self.lrelu = nn.LeakyReLU(0.2)
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=4, stride=2)
-        self.conv2 = nn.Conv2d(69, 128, kernel_size=4, stride=2)
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(65, 128, kernel_size=4, stride=2)
         self.bn2 = nn.BatchNorm2d(128, eps=0.001, track_running_stats=True)
         self.conv3 = nn.Conv2d(128, 256, kernel_size=4, stride=2)
         self.bn3 = nn.BatchNorm2d(256, eps=0.001, track_running_stats=True)
@@ -130,7 +128,8 @@ class Discriminator(nn.Module):
 class AgeClassifier(nn.Module):
     def __init__(self):
         super(AgeClassifier, self).__init__()
-        self.model = resnet18(pretrained=True, progress=True, num_classes=5)
+        self.model = resnet18(pretrained=True, progress=True)
+        self.model.fc = nn.Linear(512, 5, bias=True)
 
     def forward(self, x):
         """
