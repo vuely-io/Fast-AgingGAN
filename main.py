@@ -22,15 +22,15 @@ parser.add_argument('--save_iter', default=200, type=int,
 def main():
     args = parser.parse_args()
 
-    trainer = Trainer(max_epochs=10)
+    trainer = Trainer(max_epochs=20, gpus=2)
     if args.train_classifier:
         age_classifier = AgeModule(image_dir=args.image_dir,
                                    text_dir=args.text_dir,
                                    image_size=args.image_size,
-                                   batch_size=args.batch_size)
+                                   batch_size=args.batch_size * 4)
         trainer.fit(age_classifier)
 
-    trainer = Trainer(max_epochs=args.epochs, early_stop_callback=False)
+    trainer = Trainer(max_epochs=args.epochs, gpus=2, early_stop_callback=False)
     gan = GenAdvNet(image_dir=args.image_dir,
                     text_dir=args.text_dir,
                     image_size=args.image_size,

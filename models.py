@@ -64,22 +64,22 @@ class MobileGenerator(nn.Module):
         super(MobileGenerator, self).__init__()
         self.num_blocks = num_blocks
 
-        self.conv1 = nn.Conv2d(4, 16, kernel_size=3, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1)
-        self.bn1 = nn.BatchNorm2d(16)
-        self.bn2 = nn.BatchNorm2d(32)
+        self.conv1 = nn.Conv2d(4, 32, kernel_size=3, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.bn2 = nn.BatchNorm2d(64)
 
         self.vertebrae = nn.ModuleList(
-            [InvertedResidual(32, 32, stride=1, expand_ratio=6) for _ in range(self.num_blocks)])
+            [InvertedResidual(64, 64, stride=1, expand_ratio=6) for _ in range(self.num_blocks)])
 
-        self.trunk_conv = nn.Conv2d(32, 128, kernel_size=3, stride=1, padding=1)
+        self.trunk_conv = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
         self.bn3 = nn.BatchNorm2d(128)
 
-        self.upconv1 = nn.PixelShuffle(2)
-        self.conv_exp1 = nn.Conv2d(32, 128, kernel_size=3, stride=1, padding=1)
-        self.upconv2 = nn.PixelShuffle(2)
-
-        self.final_conv = nn.Conv2d(32, 3, kernel_size=3, stride=1, padding=1)
+        self.upconv1 = nn.UpsamplingBilinear2d(scale_factor=2)
+        self.conv_exp1 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)
+        self.upconv2 = nn.UpsamplingBilinear2d(scale_factor=2)
+        self.conv_exp2 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)
+        self.final_conv = nn.Conv2d(128, 3, kernel_size=3, stride=1, padding=1)
 
     def forward(self, x):
         """
@@ -92,7 +92,8 @@ class MobileGenerator(nn.Module):
             x = self.vertebrae[layer_num](x)
         x = self.bn3(self.trunk_conv(x))
         x = self.conv_exp1(self.upconv1(x))
-        x = self.final_conv(self.upconv2(x))
+        x = self.conv_exp2(self.upconv2(x))
+        x = self.final_conv(x)
 
         return x
 
@@ -101,14 +102,14 @@ class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
         self.lrelu = nn.LeakyReLU(0.2)
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(65, 128, kernel_size=4, stride=2)
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(65, 128, kernel_size=3, stride=2, paddding=1)
         self.bn2 = nn.BatchNorm2d(128, eps=0.001, track_running_stats=True)
-        self.conv3 = nn.Conv2d(128, 256, kernel_size=4, stride=2)
+        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1)
         self.bn3 = nn.BatchNorm2d(256, eps=0.001, track_running_stats=True)
-        self.conv4 = nn.Conv2d(256, 512, kernel_size=4, stride=2)
+        self.conv4 = nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1)
         self.bn4 = nn.BatchNorm2d(512, eps=0.001, track_running_stats=True)
-        self.conv5 = nn.Conv2d(512, 512, kernel_size=4, stride=2)
+        self.conv5 = nn.Conv2d(512, 512, kernel_size=3, stride=2, padding=1)
 
     def forward(self, x, condition):
         """

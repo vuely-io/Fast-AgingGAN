@@ -31,11 +31,8 @@ def read_image_label_pair_txt(image_dir, txt_dir, is_train=True):
     random.shuffle(lines)
     label_pairs = []
     for line in lines:
-        label_pair = []
         items = line.split()
-        label_pair.append(int(items[0]))
-        label_pair.append(int(items[1]))
-        label_pairs.append(label_pair)
+        label_pairs.append([int(items[0]), int(items[1])])
 
     group_lists = [
         os.path.join(txt_dir, 'train_age_group_0.txt'),

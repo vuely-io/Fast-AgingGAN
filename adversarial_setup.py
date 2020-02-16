@@ -41,7 +41,7 @@ class AgeModule(pl.LightningModule):
         return {'avg_val_loss': avg_loss, 'log': tensorboard_logs}
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=5e-4, weight_decay=1e-2)
+        return torch.optim.AdamW(self.parameters(), lr=1e-3, weight_decay=1e-3)
 
     @pl.data_loader
     def train_dataloader(self):
@@ -76,6 +76,12 @@ class GenAdvNet(pl.LightningModule):
         self.discriminator = Discriminator()
         self.classifier = AgeClassifier()
 
+        self.ones = torch.ones((self.batch_size, 1, image_size // 32, image_size // 32))
+        self.zeros = torch.zeros((self.batch_size, 1, image_size // 32, image_size // 32))
+        if torch.cuda.is_available():
+            self.ones = self.ones.cuda()
+            self.zeros = self.zeros.cuda()
+
         # TODO find a nicer way to do this:
         ckpt_dir = './lightning_logs/version_0/checkpoints/'
         ckpt = os.path.join(ckpt_dir, os.listdir(ckpt_dir)[0])
@@ -109,9 +115,9 @@ class GenAdvNet(pl.LightningModule):
             d3_logit = self.discriminator(self.aged_image.detach(), batch['true_cond'])
 
             # Calculate losses
-            d1_real_loss = self.criterion_mse(d1_logit, torch.ones(d1_logit.shape))
-            d2_fake_loss = self.criterion_mse(d2_logit, torch.zeros(d2_logit.shape))
-            d3_fake_loss = self.criterion_mse(d3_logit, torch.zeros(d3_logit.shape))
+            d1_real_loss = self.criterion_mse(d1_logit, self.ones)
+            d2_fake_loss = self.criterion_mse(d2_logit, self.zeros)
+            d3_fake_loss = self.criterion_mse(d3_logit, self.zeros)
 
             d_loss = 1. / 2 * (d1_real_loss + 1. / 2 * (d2_fake_loss + d3_fake_loss))
             tqdm_dict = {'d_loss': d_loss}
@@ -134,7 +140,7 @@ class GenAdvNet(pl.LightningModule):
             gen_age = self.classifier(self.aged_image)
 
             # Get generator losses
-            d3_real_loss = self.criterion_mse(d3_logit, torch.ones(d3_logit.shape))
+            d3_real_loss = self.criterion_mse(d3_logit, self.ones)
             age_loss = self.criterion_ce(gen_age, batch['true_label']) * 1e-3
             feature_loss = self.criterion_mse(gen_features, real_features) * 1e-5
 
@@ -163,8 +169,8 @@ class GenAdvNet(pl.LightningModule):
         torch.save(self.discriminator.state_dict(), 'model_weights/disc.pth')
 
     def configure_optimizers(self):
-        return [torch.optim.AdamW(self.parameters(), lr=1e-4, weight_decay=1e-3),
-                torch.optim.AdamW(self.parameters(), lr=1e-4, weight_decay=1e-3)], []
+        return [torch.optim.AdamW(self.parameters(), lr=1e-4, weight_decay=1e-4),
+                torch.optim.AdamW(self.parameters(), lr=1e-4, weight_decay=1e-4)], []
 
     @pl.data_loader
     def train_dataloader(self):

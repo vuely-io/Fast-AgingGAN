@@ -81,7 +81,7 @@ class DataLoaderGAN(Dataset):
         return source_image_conditioned, true_condition, false_condition
 
     def __len__(self):
-        return len(self.image_pairs)
+        return len(self.source_images)
 
     def __getitem__(self, idx):
         """
