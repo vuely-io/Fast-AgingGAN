@@ -78,12 +78,6 @@ class GenAdvNet(pl.LightningModule):
         self.discriminator = Discriminator()
         self.classifier = AgeClassifier()
 
-        self.ones = torch.ones((self.batch_size, 1, image_size // 32, image_size // 32))
-        self.zeros = torch.zeros((self.batch_size, 1, image_size // 32, image_size // 32))
-        if torch.cuda.is_available():
-            self.ones = self.ones.cuda()
-            self.zeros = self.zeros.cuda()
-
         # TODO find a nicer way to do this:
         ckpt_dir = './lightning_logs/version_0/checkpoints/'
         ckpt = os.path.join(ckpt_dir, os.listdir(ckpt_dir)[0])
@@ -117,11 +111,11 @@ class GenAdvNet(pl.LightningModule):
             d3_logit = self.discriminator(self.aged_image.detach(), batch['true_cond'])
 
             # Calculate losses
-            d1_real_loss = self.criterion_mse(d1_logit, self.ones)
-            d2_fake_loss = self.criterion_mse(d2_logit, self.zeros)
-            d3_fake_loss = self.criterion_mse(d3_logit, self.zeros)
+            d1_real_loss = self.criterion_mse(d1_logit, torch.ones(d1_logit.shape))
+            d2_fake_loss = self.criterion_mse(d2_logit, torch.zeros(d2_logit.shape))
+            d3_fake_loss = self.criterion_mse(d3_logit, torch.zeros(d3_logit.shape))
 
-            d_loss = 1. / 2 * (d1_real_loss + 1. / 2 * (d2_fake_loss + d3_fake_loss))
+            d_loss = 1. / 2 * (d1_real_loss + 1. / 2 * (d2_fake_loss + d3_fake_loss)) * 75
             tqdm_dict = {'d_loss': d_loss}
             output = OrderedDict({
                 'loss': d_loss,
@@ -142,18 +136,28 @@ class GenAdvNet(pl.LightningModule):
             gen_age = self.classifier(self.aged_image)
 
             # Get generator losses
-            d3_real_loss = self.criterion_mse(d3_logit, self.ones)
-            age_loss = self.criterion_ce(gen_age, batch['true_label']) * 1e-3
-            feature_loss = self.criterion_mse(gen_features, real_features) * 1e-5
+            d3_real_loss = 0.5 * self.criterion_mse(d3_logit, torch.ones(d3_logit.shape)) * 75
+            age_loss = self.criterion_ce(gen_age, batch['true_label']) * 30
+            feature_loss = self.criterion_mse(gen_features, real_features) * 5e-5
 
             g_loss = d3_real_loss + age_loss + feature_loss
 
             # log sampled images
             if batch_idx % 200 == 0:
-                sample_imgs = self.aged_image[:6]
-                grid = torchvision.utils.make_grid(sample_imgs, normalize=True, range=(0, 1), scale_each=True)
+                grid = torchvision.utils.make_grid(batch['src_image_cond'][..., :3][:6],
+                                                   normalize=True,
+                                                   range=(0, 1),
+                                                   scale_each=True)
+                self.logger.experiment.add_image('source_image', grid, 0)
+                grid = torchvision.utils.make_grid(self.aged_image[:6],
+                                                   normalize=True,
+                                                   range=(0, 1),
+                                                   scale_each=True)
                 self.logger.experiment.add_image('generated_images', grid, 0)
-                grid = torchvision.utils.make_grid(batch['true_image'], normalize=True, range=(0, 1), scale_each=True)
+                grid = torchvision.utils.make_grid(batch['true_image'][:6],
+                                                   normalize=True,
+                                                   range=(0, 1),
+                                                   scale_each=True)
                 self.logger.experiment.add_image('target_images', grid, 0)
 
             tqdm_dict = {'g_loss': g_loss}
@@ -182,7 +186,8 @@ class GenAdvNet(pl.LightningModule):
                                         is_train=True),
                           batch_size=self.batch_size,
                           num_workers=4,
-                          shuffle=True)
+                          shuffle=True,
+                          drop_last=True)
 
     @pl.data_loader
     def val_dataloader(self):
@@ -192,4 +197,5 @@ class GenAdvNet(pl.LightningModule):
                                         is_train=False),
                           batch_size=self.batch_size,
                           num_workers=4,
-                          shuffle=False)
+                          shuffle=False,
+                          drop_last=True)
