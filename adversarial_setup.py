@@ -137,14 +137,14 @@ class GenAdvNet(pl.LightningModule):
 
             # Get generator losses
             d3_real_loss = 0.5 * self.criterion_mse(d3_logit, torch.ones(d3_logit.shape).cuda()) * 75
-            age_loss = self.criterion_ce(gen_age, batch['true_label']) * 30
-            feature_loss = self.criterion_mse(gen_features, real_features) * 5e-5
+            age_loss = self.criterion_ce(gen_age, batch['true_label'])
+            feature_loss = self.criterion_mse(gen_features, real_features)
 
             g_loss = d3_real_loss + age_loss + feature_loss
 
             # log sampled images
             if batch_idx % 200 == 0:
-                grid = torchvision.utils.make_grid(batch['src_image_cond'][:6, :3, ...][:6],
+                grid = torchvision.utils.make_grid(batch['src_image_cond'][:6, :3, ...],
                                                    normalize=True,
                                                    range=(0, 1),
                                                    scale_each=True)
@@ -175,8 +175,8 @@ class GenAdvNet(pl.LightningModule):
         torch.save(self.discriminator.state_dict(), 'model_weights/disc.pth')
 
     def configure_optimizers(self):
-        return [torch.optim.AdamW(self.parameters(), lr=1e-4, weight_decay=1e-4),
-                torch.optim.AdamW(self.parameters(), lr=1e-4, weight_decay=1e-4)], []
+        return [torch.optim.AdamW(self.parameters(), lr=1e-4, weight_decay=1e-6),
+                torch.optim.AdamW(self.parameters(), lr=1e-4, weight_decay=1e-6)], []
 
     @pl.data_loader
     def train_dataloader(self):
