@@ -144,7 +144,7 @@ class GenAdvNet(pl.LightningModule):
 
             # log sampled images
             if batch_idx % 200 == 0:
-                grid = torchvision.utils.make_grid(batch['src_image_cond'][..., :3][:6],
+                grid = torchvision.utils.make_grid(batch['src_image_cond'][:6, :3, ...][:6],
                                                    normalize=True,
                                                    range=(0, 1),
                                                    scale_each=True)
