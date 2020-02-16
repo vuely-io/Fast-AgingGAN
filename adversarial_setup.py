@@ -51,7 +51,8 @@ class AgeModule(pl.LightningModule):
                                         is_train=True),
                           batch_size=self.batch_size,
                           num_workers=4,
-                          shuffle=True)
+                          shuffle=True,
+                          drop_last=True)
 
     @pl.data_loader
     def val_dataloader(self):
@@ -61,7 +62,8 @@ class AgeModule(pl.LightningModule):
                                         is_train=False),
                           batch_size=self.batch_size,
                           num_workers=4,
-                          shuffle=False)
+                          shuffle=False,
+                          drop_last=True)
 
 
 class GenAdvNet(pl.LightningModule):
