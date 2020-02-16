@@ -103,7 +103,7 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
         self.lrelu = nn.LeakyReLU(0.2)
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(65, 128, kernel_size=3, stride=2, paddding=1)
+        self.conv2 = nn.Conv2d(65, 128, kernel_size=3, stride=2, padding=1)
         self.bn2 = nn.BatchNorm2d(128, eps=0.001, track_running_stats=True)
         self.conv3 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1)
         self.bn3 = nn.BatchNorm2d(256, eps=0.001, track_running_stats=True)
