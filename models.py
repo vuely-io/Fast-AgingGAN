@@ -80,6 +80,7 @@ class MobileGenerator(nn.Module):
         self.upconv2 = nn.UpsamplingBilinear2d(scale_factor=2)
         self.conv_exp2 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)
         self.final_conv = nn.Conv2d(128, 3, kernel_size=3, stride=1, padding=1)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         """
@@ -93,7 +94,7 @@ class MobileGenerator(nn.Module):
         x = self.bn3(self.trunk_conv(x))
         x = self.conv_exp1(self.upconv1(x))
         x = self.conv_exp2(self.upconv2(x))
-        x = self.final_conv(x)
+        x = self.sigmoid(self.final_conv(x))
 
         return x
 
@@ -130,25 +131,19 @@ class AgeClassifier(nn.Module):
     def __init__(self):
         super(AgeClassifier, self).__init__()
         self.model = resnet18(pretrained=True, progress=True)
-        self.model.fc = nn.Linear(512, 5, bias=True)
-
-    def forward(self, x):
-        """
-        Args:
-            x: Tesnor, the input to extract features from.
-        """
-        return self.model(x)
-
-
-class FeatureExtractor(nn.Module):
-    def __init__(self):
-        super(FeatureExtractor, self).__init__()
-        self.model = resnet18(pretrained=True, progress=True)
         self.model = nn.Sequential(*list(self.model.children())[:-2])
+        self.bn_last = nn.BatchNorm2d(512)
+        self.fc = nn.Linear(512, 5, bias=True)
 
     def forward(self, x):
         """
         Args:
             x: Tensor, the input to extract features from.
+
+        Returns:
+            x: The predicted class logits.
+            features: The final conv features of the image.
         """
-        return self.model(x)
+        features = self.model(x)
+        x = self.fc(self.bn_last(features))
+        return x, features
