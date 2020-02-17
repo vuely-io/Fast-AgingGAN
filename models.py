@@ -133,7 +133,7 @@ class AgeClassifier(nn.Module):
         self.model = resnet18(pretrained=True, progress=True)
         self.model = nn.Sequential(*list(self.model.children())[:-2])
         self.bn_last = nn.BatchNorm2d(512)
-        self.fc = nn.Linear(512, 5, bias=True)
+        self.fc = nn.Linear(4 * 4 * 512, 5, bias=True)
 
     def forward(self, x):
         """
@@ -144,6 +144,7 @@ class AgeClassifier(nn.Module):
             x: The predicted class logits.
             features: The final conv features of the image.
         """
+        b, _, _, _ = x.shape
         features = self.model(x)
-        x = self.fc(self.bn_last(features))
+        x = self.fc(self.bn_last(features).view(b, -1))
         return x, features
