@@ -33,7 +33,7 @@ class AgeModule(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
-        y_hat = self.forward(x)
+        y_hat, _ = self.forward(x)
         return {'val_loss': F.cross_entropy(y_hat, y)}
 
     def validation_end(self, outputs):
