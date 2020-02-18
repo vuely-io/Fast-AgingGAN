@@ -99,17 +99,18 @@ class GenAdvNet(pl.LightningModule):
         return self.generator(x)
 
     def training_step(self, batch, batch_idx, optimizer_idx):
+        src_image_cond, true_image, true_condition, false_condition, true_label = batch
         # Will write later
         if optimizer_idx == 0:
-            self.aged_image = self.forward(batch['src_image_cond'])
+            self.aged_image = self.forward(src_image_cond)
             # Get age prediction
             gen_age, gen_features = self.classifier(self.aged_image)
-            _, src_features = self.classifier(batch['src_image_cond'][:, :3, ...])
-            d3_logit = self.discriminator(self.aged_image, batch['true_cond'])
+            _, src_features = self.classifier(src_image_cond[:, :3, ...])
+            d3_logit = self.discriminator(self.aged_image, true_condition)
 
             # Get generator losses
             d3_real_loss = 0.5 * torch.pow(d3_logit - 1.0, 2).mean() * 75
-            age_loss = self.criterion_ce(gen_age, batch['true_label']) * 30
+            age_loss = self.criterion_ce(gen_age, true_label) * 30
             feature_loss = self.criterion_mse(gen_features, src_features) * 5e-5
 
             g_loss = (d3_real_loss + age_loss + feature_loss) / 75.0
@@ -124,9 +125,9 @@ class GenAdvNet(pl.LightningModule):
 
         if optimizer_idx == 1:
             # Get logits from discriminator model
-            d1_logit = self.discriminator(batch['true_image'], batch['true_cond'])
-            d2_logit = self.discriminator(batch['true_image'], batch['false_cond'])
-            d3_logit = self.discriminator(self.aged_image.detach(), batch['true_cond'])
+            d1_logit = self.discriminator(true_image, true_condition)
+            d2_logit = self.discriminator(true_image, false_condition)
+            d3_logit = self.discriminator(self.aged_image.detach(), true_condition)
 
             # Calculate losses
             d1_real_loss = torch.pow(d1_logit - 1.0, 2).mean()
@@ -137,7 +138,7 @@ class GenAdvNet(pl.LightningModule):
 
             # log sampled images
             if batch_idx % 200 == 0:
-                grid = torchvision.utils.make_grid(batch['src_image_cond'][:6, :3, ...],
+                grid = torchvision.utils.make_grid(src_image_cond[:6, :3, ...],
                                                    normalize=True,
                                                    range=(0, 1),
                                                    scale_each=True)
@@ -147,7 +148,7 @@ class GenAdvNet(pl.LightningModule):
                                                    range=(0, 1),
                                                    scale_each=True)
                 self.logger.experiment.add_image('generated_images', grid, 0)
-                grid = torchvision.utils.make_grid(batch['true_image'][:6],
+                grid = torchvision.utils.make_grid(true_image[:6],
                                                    normalize=True,
                                                    range=(0, 1),
                                                    scale_each=True)

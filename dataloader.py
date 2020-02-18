@@ -102,10 +102,4 @@ class DataLoaderGAN(Dataset):
             true_image = self.transforms(true_image)
 
         src_image_cond, true_condition, false_condition = self._condition_images(source_image, true_label, false_label)
-
-        dataset = {'src_image_cond': src_image_cond,
-                   'true_image': true_image,
-                   'true_cond': true_condition,
-                   'false_cond': false_condition,
-                   'true_label': true_label}
-        return dataset
+        return src_image_cond, true_image, true_condition, false_condition, true_label
