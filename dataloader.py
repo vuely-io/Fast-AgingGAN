@@ -92,9 +92,10 @@ class DataLoaderGAN(Dataset):
         source_age = self.source_labels[idx]
 
         true_image = Image.open(random.sample(self.age_grouped_paths[source_age], 1)[0]).resize(self.image_size)
-        true_label = torch.from_numpy(self.source_labels[idx])
+        true_label = self.source_labels[idx]
         space = {int(x) for x in range(5)} - {int(true_label)}
-        false_label = torch.from_numpy(random.sample(space, 1)[0])
+        false_label = random.sample(space, 1)[0]
+        true_label = torch.from_numpy(true_label)
 
         if self.transforms is not None:
             source_image = self.transforms(source_image)
