@@ -76,7 +76,7 @@ class GenAdvNet(pl.LightningModule):
         self.batch_size = batch_size
 
         self.generator = ResnetGenerator(4, 3, 64, norm_layer=torch.nn.BatchNorm2d, use_dropout=False, n_blocks=9)
-        self.discriminator = Discriminator()
+        self.discriminator = Discriminator(3, )
         self.classifier = AgeClassifier()
 
         # TODO find a nicer way to do this:

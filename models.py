@@ -218,31 +218,56 @@ class MobileGenerator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self):
-        super(Discriminator, self).__init__()
-        self.lrelu = nn.LeakyReLU(0.2)
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(65, 128, kernel_size=3, stride=2, padding=1)
-        self.bn2 = nn.BatchNorm2d(128, eps=0.001, track_running_stats=True)
-        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1)
-        self.bn3 = nn.BatchNorm2d(256, eps=0.001, track_running_stats=True)
-        self.conv4 = nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1)
-        self.bn4 = nn.BatchNorm2d(512, eps=0.001, track_running_stats=True)
-        self.conv5 = nn.Conv2d(512, 512, kernel_size=3, stride=2, padding=1)
+    """Defines a PatchGAN discriminator"""
 
-    def forward(self, x, condition):
+    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d):
+        """Construct a PatchGAN discriminator
+        Parameters:
+            input_nc (int)  -- the number of channels in input images
+            ndf (int)       -- the number of filters in the last conv layer
+            n_layers (int)  -- the number of conv layers in the discriminator
+            norm_layer      -- normalization layer
         """
-        Args:
-            x: Tensor, the input image tensor for the discriminator.
-            condition: Tensor, the age conditionality.
-        """
-        x = self.lrelu(self.conv1(x))
-        x = torch.cat((x, condition), 1)
-        x = self.lrelu(self.bn2(self.conv2(x)))
-        x = self.lrelu(self.bn3(self.conv3(x)))
-        x = self.lrelu(self.bn4(self.conv4(x)))
-        x = self.conv5(x)
-        return x
+        super(Discriminator, self).__init__()
+        if type(norm_layer) == functools.partial:  # no need to use bias as BatchNorm2d has affine parameters
+            use_bias = norm_layer.func == nn.InstanceNorm2d
+        else:
+            use_bias = norm_layer == nn.InstanceNorm2d
+
+        kw = 4
+        padw = 1
+        self.conv1 = nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw)
+        self.relu1 = nn.LeakyReLU(0.2, True)
+        sequence = []
+        nf_mult = 1
+        for n in range(1, n_layers):  # gradually increase the number of filters
+            nf_mult_prev = nf_mult
+            nf_mult = min(2 ** n, 8)
+            if n == 1:
+                cf = 1
+            else:
+                cf = 0
+            sequence += [
+                nn.Conv2d(cf + ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
+                norm_layer(ndf * nf_mult),
+                nn.LeakyReLU(0.2, True)
+            ]
+
+        nf_mult_prev = nf_mult
+        nf_mult = min(2 ** n_layers, 8)
+        sequence += [
+            nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=1, padding=padw, bias=use_bias),
+            norm_layer(ndf * nf_mult),
+            nn.LeakyReLU(0.2, True)
+        ]
+
+        sequence += [nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]
+        self.model = nn.Sequential(*sequence)
+
+    def forward(self, x, cond):
+        x = self.relu(self.conv1(x))
+        x = torch.cat([x, cond], dim=1)
+        return self.model(x)
 
 
 class AgeClassifier(nn.Module):
