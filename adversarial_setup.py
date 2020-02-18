@@ -8,7 +8,7 @@ import torchvision
 from torch.utils.data import DataLoader
 
 from dataloader import DataLoaderAge, DataLoaderGAN
-from models import MobileGenerator, Discriminator, AgeClassifier
+from models import ResnetGenerator, Discriminator, AgeClassifier
 
 
 class AgeModule(pl.LightningModule):
@@ -75,7 +75,7 @@ class GenAdvNet(pl.LightningModule):
         self.image_size = (image_size, image_size)
         self.batch_size = batch_size
 
-        self.generator = MobileGenerator(num_blocks=6)
+        self.generator = ResnetGenerator(4, 3, 64, norm_layer=torch.nn.BatchNorm2d, use_dropout=False, n_blocks=9)
         self.discriminator = Discriminator()
         self.classifier = AgeClassifier()
 
