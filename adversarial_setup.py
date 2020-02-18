@@ -105,9 +105,10 @@ class GenAdvNet(pl.LightningModule):
             # Get age prediction
             gen_age, gen_features = self.classifier(self.aged_image)
             _, src_features = self.classifier(batch['src_image_cond'][:, :3, ...])
+            d3_logit = self.discriminator(self.aged_image, batch['true_cond'])
 
             # Get generator losses
-            d3_real_loss = 0.5 * torch.pow(self.d3_logit - 1.0, 2).mean() * 75
+            d3_real_loss = 0.5 * torch.pow(d3_logit - 1.0, 2).mean() * 75
             age_loss = self.criterion_ce(gen_age, batch['true_label']) * 30
             feature_loss = self.criterion_mse(gen_features, src_features) * 5e-5
 
