@@ -106,12 +106,12 @@ class GenAdvNet(pl.LightningModule):
             # Get logits from discriminator model
             d1_logit = self.discriminator(batch['true_image'], batch['true_cond'])
             d2_logit = self.discriminator(batch['true_image'], batch['false_cond'])
-            d3_logit = self.discriminator(self.aged_image.detach(), batch['true_cond'])
+            self.d3_logit = self.discriminator(self.aged_image.detach(), batch['true_cond'])
 
             # Calculate losses
             d1_real_loss = torch.pow(d1_logit - 1.0, 2).mean()
             d2_fake_loss = torch.pow(d2_logit, 2).mean()
-            d3_fake_loss = torch.pow(d3_logit, 2).mean()
+            d3_fake_loss = torch.pow(self.d3_logit, 2).mean()
 
             d_loss = 1. / 2 * (d1_real_loss + 1. / 2 * (d2_fake_loss + d3_fake_loss))
             tqdm_dict = {'d_loss': d_loss}
@@ -124,18 +124,16 @@ class GenAdvNet(pl.LightningModule):
 
         # Train generator
         if optimizer_idx == 1:
-            d3_logit = self.discriminator(self.aged_image, batch['true_cond'])
-
             # Get age prediction
             gen_age, gen_features = self.classifier(self.aged_image)
             _, src_features = self.classifier(batch['src_image_cond'][:, :3, ...])
 
             # Get generator losses
-            d3_real_loss = 0.5 * torch.pow(d3_logit - 1.0, 2).mean() * 75
-            age_loss = self.criterion_ce(gen_age, batch['true_label']) * 30
+            d3_real_loss = 0.5 * torch.pow(self.d3_logit - 1.0, 2).mean() * 75
+            #age_loss = self.criterion_ce(gen_age, batch['true_label']) * 30
             feature_loss = self.criterion_mse(gen_features, src_features) * 5e-5
 
-            g_loss = (d3_real_loss + age_loss + feature_loss) / 75.0
+            g_loss = (d3_real_loss + feature_loss) / 75.0
 
             # log sampled images
             if batch_idx % 200 == 0:
