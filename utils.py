@@ -42,7 +42,7 @@ def read_image_label_pair_txt(image_dir, txt_dir, is_train=True):
         os.path.join(txt_dir, 'train_age_group_4.txt')
     ]
 
-    label_group_images = []
+    age_group_images = []
     for i in range(len(group_lists)):
         with open(group_lists[i], 'r') as f:
             lines = f.readlines()
@@ -51,13 +51,6 @@ def read_image_label_pair_txt(image_dir, txt_dir, is_train=True):
         for l in lines:
             items = l.split()
             group_images.append(os.path.join(image_dir, items[0]))
-        label_group_images.append(group_images)
+        age_group_images.append(group_images)
 
-    image_pairs = []
-    for pair in label_pairs:
-        image_pair = []
-        image_pair.append(random.sample(label_group_images[pair[0]], 1)[0])
-        image_pair.append(random.sample(label_group_images[pair[1]], 1)[0])
-        image_pairs.append(image_pair)
-
-    return label_pairs, image_pairs
+    return age_group_images

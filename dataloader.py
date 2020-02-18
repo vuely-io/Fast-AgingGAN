@@ -55,8 +55,8 @@ class DataLoaderGAN(Dataset):
             image_size: tuple (H, W), the spatial size of the image.
                 image.
         """
-        self.source_images, _ = read_image_label_txt(image_dir, text_dir, is_train)
-        self.label_pairs, self.image_pairs = read_image_label_pair_txt(image_dir, text_dir, is_train)
+        self.source_images, self.source_labels = read_image_label_txt(image_dir, text_dir, is_train)
+        self.age_grouped_paths = read_image_label_pair_txt(image_dir, text_dir, is_train)
         self.image_size = image_size
         self.transforms = transforms.Compose([
             transforms.ToTensor()
@@ -89,10 +89,12 @@ class DataLoaderGAN(Dataset):
             idx: Index of items to retrieve.
         """
         source_image = Image.open(self.source_images[idx]).resize(self.image_size)
-        true_image = Image.open(self.image_pairs[idx][0]).resize(self.image_size)
+        source_age = self.source_labels[idx]
 
-        true_label = self.label_pairs[idx][0]
-        false_label = self.label_pairs[idx][1]
+        true_image = Image.open(random.sample(self.age_grouped_paths[source_age], 1)[0]).resize(self.image_size)
+        true_label = self.source_labels[idx]
+        space = list({x for x in range(5)} - {true_label})
+        false_label = random.sample(space, 1)[0]
 
         if self.transforms is not None:
             source_image = self.transforms(source_image)

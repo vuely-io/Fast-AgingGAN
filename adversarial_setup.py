@@ -122,9 +122,7 @@ class GenAdvNet(pl.LightningModule):
             })
             return output
 
-        # Train generator
         if optimizer_idx == 1:
-
             # Get logits from discriminator model
             d1_logit = self.discriminator(batch['true_image'], batch['true_cond'])
             d2_logit = self.discriminator(batch['true_image'], batch['false_cond'])
