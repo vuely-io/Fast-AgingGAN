@@ -265,7 +265,7 @@ class Discriminator(nn.Module):
         self.model = nn.Sequential(*sequence)
 
     def forward(self, x, cond):
-        x = self.relu(self.conv1(x))
+        x = self.relu1(self.conv1(x))
         x = torch.cat([x, cond], dim=1)
         return self.model(x)
 
