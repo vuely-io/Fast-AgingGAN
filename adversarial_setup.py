@@ -92,7 +92,7 @@ class GenAdvNet(pl.LightningModule):
         for p in self.classifier.parameters():
             p.requires_grad = False
 
-        self.criterion_mse = torch.nn.MSELoss()
+        self.criterion_bce = torch.nn.BCEWithLogitsLoss()
         self.criterion_ce = torch.nn.CrossEntropyLoss()
 
     def forward(self, x):
@@ -109,11 +109,13 @@ class GenAdvNet(pl.LightningModule):
             d3_logit = self.discriminator(self.aged_image, true_condition)
 
             # Get generator losses
-            d3_real_loss = 0.5 * torch.pow(d3_logit - 1.0, 2).mean() * 75
-            age_loss = self.criterion_ce(gen_age, true_label) * 30
-            feature_loss = self.criterion_mse(gen_features, src_features) * 5e-5
+            b, c, h, w = d3_logit.shape
+            valid_target = torch.ones(d3_logit.shape) - torch.empty(b, c, h, w).uniform_(0, 0.1)
+            d3_real_loss = self.criterion_bce(d3_logit, valid_target.cuda())
+            age_loss = self.criterion_ce(gen_age, true_label)
+            feature_loss = self.criterion_mse(gen_features.view(b, -1), src_features.view(b, -1))
 
-            g_loss = (d3_real_loss + age_loss + feature_loss) / 75.0
+            g_loss = (d3_real_loss + age_loss + feature_loss)
 
             tqdm_dict = {'g_loss': g_loss}
             output = OrderedDict({
@@ -130,9 +132,12 @@ class GenAdvNet(pl.LightningModule):
             d3_logit = self.discriminator(self.aged_image.detach(), true_condition)
 
             # Calculate losses
-            d1_real_loss = torch.pow(d1_logit - 1.0, 2).mean()
-            d2_fake_loss = torch.pow(d2_logit, 2).mean()
-            d3_fake_loss = torch.pow(d3_logit, 2).mean()
+            b, c, h, w = d3_logit.shape
+            valid_target = torch.ones(d3_logit.shape) - torch.empty(b, c, h, w).uniform_(0, 0.1)
+            fake_target = torch.empty(b, c, h, w).uniform_(0.9, 1.0)
+            d1_real_loss = self.criterion_bce(d1_logit, valid_target.cuda())
+            d2_fake_loss = self.criterion_bce(d2_logit, fake_target)
+            d3_fake_loss = self.criterion_bce(d3_logit, fake_target)
 
             d_loss = 1. / 2 * (d1_real_loss + 1. / 2 * (d2_fake_loss + d3_fake_loss))
 
