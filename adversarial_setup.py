@@ -93,6 +93,7 @@ class GenAdvNet(pl.LightningModule):
             p.requires_grad = False
 
         self.criterion_bce = torch.nn.BCEWithLogitsLoss()
+        self.criterion_mse = torch.nn.MSELoss()
         self.criterion_ce = torch.nn.CrossEntropyLoss()
 
     def forward(self, x):
