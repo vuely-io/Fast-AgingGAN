@@ -97,11 +97,11 @@ class DataLoaderGAN(Dataset):
         false_label = random.sample(space, 1)[0]
         true_label = torch.from_numpy(true_label)
 
-        source_image = source_image * 2.0 - 1.0
-        true_image = true_image * 2.0 - 1.0
         if self.transforms is not None:
             source_image = self.transforms(source_image)
             true_image = self.transforms(true_image)
 
+        source_image = source_image * 2.0 - 1.0
+        true_image = true_image * 2.0 - 1.0
         src_image_cond, true_condition, false_condition = self._condition_images(source_image, true_label, false_label)
         return src_image_cond, true_image, true_condition, false_condition, true_label
