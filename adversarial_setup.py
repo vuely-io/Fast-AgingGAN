@@ -137,8 +137,8 @@ class GenAdvNet(pl.LightningModule):
             valid_target = torch.ones(d3_logit.shape) - torch.empty(b, c, h, w).uniform_(0, 0.1)
             fake_target = torch.empty(b, c, h, w).uniform_(0.9, 1.0)
             d1_real_loss = self.criterion_bce(d1_logit, valid_target.cuda())
-            d2_fake_loss = self.criterion_bce(d2_logit, fake_target)
-            d3_fake_loss = self.criterion_bce(d3_logit, fake_target)
+            d2_fake_loss = self.criterion_bce(d2_logit, fake_target.cuda())
+            d3_fake_loss = self.criterion_bce(d3_logit, fake_target.cuda())
 
             d_loss = 1. / 2 * (d1_real_loss + 1. / 2 * (d2_fake_loss + d3_fake_loss))
 
