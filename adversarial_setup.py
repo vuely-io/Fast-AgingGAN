@@ -103,7 +103,7 @@ class GenAdvNet(pl.LightningModule):
         source_img_128, true_label_img, true_label_128, true_label_64, fake_label_64, true_label = batch
         # Will write later
         if optimizer_idx == 0:
-            self.aged_image = self.forward(torch.cat([source_img_128, true_label_128]))
+            self.aged_image = self.forward(torch.cat([source_img_128, true_label_128], dim=1))
             # Get age prediction
             gen_age, gen_features = self.classifier(self.aged_image)
             _, src_features = self.classifier(source_img_128)
