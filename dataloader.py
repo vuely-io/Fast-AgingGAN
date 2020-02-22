@@ -158,6 +158,9 @@ class DataLoaderGAN(Dataset):
             if self.transforms is not None:
                 true_label_img = self.transforms(true_label_img)
                 source_img_128 = self.transforms(source_img_128)
+                true_label_128 = self.transforms(true_label_128)
+                true_label_64 = self.transforms(true_label_64)
+                fake_label_64 = self.transforms(fake_label_64)
 
             # source img 128 : use it to generate different age face -> then resize to (227,227)
             # to extract feature, compile with source img 227
