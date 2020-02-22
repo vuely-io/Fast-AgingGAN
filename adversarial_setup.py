@@ -128,7 +128,7 @@ class GenAdvNet(pl.LightningModule):
 
         if optimizer_idx == 1:
             # Get logits from discriminator model
-            d1_logit = self.discriminator(true_label_128, true_label_64)
+            d1_logit = self.discriminator(true_label_img, true_label_64)
             d2_logit = self.discriminator(true_label_img, fake_label_64)
             d3_logit = self.discriminator(self.aged_image.detach(), true_label_64)
 
