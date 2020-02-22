@@ -107,7 +107,7 @@ class GenAdvNet(pl.LightningModule):
             # Get age prediction
             gen_age, gen_features = self.classifier(self.aged_image)
             _, src_features = self.classifier(source_img_128)
-            d3_logit = self.discriminator(self.aged_image, true_label_128)
+            d3_logit = self.discriminator(self.aged_image, true_label_64)
 
             # Get generator losses
             b, c, h, w = d3_logit.shape
