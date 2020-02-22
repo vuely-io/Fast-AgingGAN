@@ -1,11 +1,13 @@
+import os
 import random
 
-import torch
+import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
+from torchvision.datasets.folder import pil_loader
 
-from utils import read_image_label_txt, read_image_label_pair_txt
+from utils import read_image_label_pair_txt
 
 
 class DataLoaderAge(Dataset):
@@ -45,63 +47,136 @@ class DataLoaderAge(Dataset):
 
 
 class DataLoaderGAN(Dataset):
-    """Dataset for the face aging GAN"""
+    def __init__(self, image_dir, text_dir, batch_size=32, split="train", transforms=None):
+        self.image_dir = image_dir
+        self.text_dir = text_dir
+        self.batch_size = batch_size
+        self.split = split
 
-    def __init__(self, image_dir, text_dir, image_size, is_train=True):
-        """
-        Args:
-            image_dir: str, path to the directory with face images.
-            text_dir: str, path to the directory with data split text files.
-            image_size: tuple (H, W), the spatial size of the image.
-                image.
-        """
-        self.source_images, self.source_labels = read_image_label_txt(image_dir, text_dir, is_train)
-        self.age_grouped_paths = read_image_label_pair_txt(image_dir, text_dir, is_train)
-        self.image_size = image_size
-        self.transforms = transforms.Compose([
-            transforms.ToTensor()
-        ])
+        self.condition128 = []
+        full_one = np.ones((128, 128), dtype=np.float32)
+        for i in range(5):
+            full_zero = np.zeros((128, 128, 5), dtype=np.float32)
+            full_zero[:, :, i] = full_one
+            self.condition128.append(full_zero)
 
-    def _condition_images(self, source_image, true_label, false_label):
-        """
-        Args:
-            source_image: tensor, torch tensor of the input image to the
-                generator.
-            true_label: int, the integer category label of the target domain.
-            false_label: int, the integer category label of the non-target
-                domain images.
-        """
-        h, w = self.image_size
-        true_condition = torch.ones((1, h, w)) * true_label
-        false_condition = torch.ones([1] + [x // 2 for x in self.image_size]) * false_label
+        # define label 64*64 for condition discriminate image
+        self.condition64 = []
+        full_one = np.ones((64, 64), dtype=np.float32)
+        for i in range(5):
+            full_zero = np.zeros((64, 64, 5), dtype=np.float32)
+            full_zero[:, :, i] = full_one
+            self.condition64.append(full_zero)
 
-        source_image_conditioned = torch.cat([source_image, true_condition], dim=0)
-        true_condition = torch.ones([1] + [x // 2 for x in self.image_size]) * true_label
+        # define label_pairs
+        label_pair_root = os.path.join(self.text_dir, "train_label_pair.txt")
+        with open(label_pair_root, 'r') as f:
+            lines = f.readlines()
+        lines = [line.strip() for line in lines]
+        random.shuffle(lines)
+        self.label_pairs = []
+        for line in lines:
+            label_pair = []
+            items = line.split()
+            label_pair.append(int(items[0]))
+            label_pair.append(int(items[1]))
+            self.label_pairs.append(label_pair)
 
-        return source_image_conditioned, true_condition, false_condition
+        # define group_images
+        group_lists = [
+            os.path.join(self.text_dir, 'train_age_group_0.txt'),
+            os.path.join(self.text_dir, 'train_age_group_1.txt'),
+            os.path.join(self.text_dir, 'train_age_group_2.txt'),
+            os.path.join(self.text_dir, 'train_age_group_3.txt'),
+            os.path.join(self.text_dir, 'train_age_group_4.txt')
+        ]
 
-    def __len__(self):
-        return len(self.source_images)
+        self.label_group_images = []
+        for i in range(len(group_lists)):
+            with open(group_lists[i], 'r') as f:
+                lines = f.readlines()
+                lines = [line.strip() for line in lines]
+            group_images = []
+            for l in lines:
+                items = l.split()
+                group_images.append(os.path.join(self.image_dir, items[0]))
+            self.label_group_images.append(group_images)
+
+        # define train.txt
+        if self.split is "train":
+            self.source_images = []  # which use to aging transfer
+            with open(os.path.join(self.text_dir, 'train.txt'), 'r') as f:
+                lines = f.readlines()
+                lines = [line.strip() for line in lines]
+            random.shuffle(lines)
+            for l in lines:
+                items = l.split()
+                self.source_images.append(os.path.join(self.image_dir, items[0]))
+        else:
+            self.source_images = []  # which use to aging transfer
+            with open(os.path.join(self.text_dir, 'test.txt'), 'r') as f:
+                lines = f.readlines()
+                lines = [line.strip() for line in lines]
+            random.shuffle(lines)
+            for l in lines:
+                items = l.split()
+                self.source_images.append(os.path.join(self.image_dir, items[0]))
+
+        # define pointer
+        self.train_group_pointer = [0, 0, 0, 0, 0]
+        self.source_pointer = 0
+        self.transforms = transforms
 
     def __getitem__(self, idx):
-        """
-        Args:
-            idx: Index of items to retrieve.
-        """
-        source_image = Image.open(self.source_images[idx]).resize(self.image_size)
-        source_age = self.source_labels[idx]
+        if self.split is "train":
+            pair_idx = idx // self.batch_size  # a batch train the same pair
+            true_label = int(self.label_pairs[pair_idx][0])
+            fake_label = int(self.label_pairs[pair_idx][1])
 
-        true_image = Image.open(random.sample(self.age_grouped_paths[source_age], 1)[0]).resize(self.image_size)
-        true_label = self.source_labels[idx]
-        space = {int(x) for x in range(5)} - {int(true_label)}
-        false_label = random.sample(space, 1)[0]
-        true_label = torch.from_numpy(true_label)
+            true_label_128 = self.condition128[true_label]
+            true_label_64 = self.condition64[true_label]
+            fake_label_64 = self.condition64[fake_label]
 
-        if self.transforms is not None:
-            source_image = self.transforms(source_image)
-            true_image = self.transforms(true_image)
+            true_label_img = pil_loader(
+                self.label_group_images[true_label][self.train_group_pointer[true_label]]).resize((128, 128))
+            source_img = pil_loader(self.source_images[self.source_pointer])
 
-        source_image = source_image * 2.0 - 1.0
-        true_image = true_image * 2.0 - 1.0
-        src_image_cond, true_condition, false_condition = self._condition_images(source_image, true_label, false_label)
-        return src_image_cond, true_image, true_condition, false_condition, true_label
+            source_img_128 = source_img.resize((128, 128))
+
+            if self.train_group_pointer[true_label] < len(self.label_group_images[true_label]) - 1:
+                self.train_group_pointer[true_label] += 1
+            else:
+                self.train_group_pointer[true_label] = 0
+
+            if self.source_pointer < len(self.source_images) - 1:
+                self.source_pointer += 1
+            else:
+                self.source_pointer = 0
+
+            if self.transforms is not None:
+                true_label_img = self.transforms(true_label_img)
+                source_img_128 = self.transforms(source_img_128)
+
+            # source img 128 : use it to generate different age face -> then resize to (227,227)
+            # to extract feature, compile with source img 227
+            # ture_label_img : img in target age group -> use to train discriminator
+            # true_label_128 : use this condition to generate
+            # true_label_64 and fake_label_64 : use this condition to discrimination
+            # true_label : label
+
+            return source_img_128, true_label_img, true_label_128, true_label_64, fake_label_64, true_label
+        else:
+            source_img_128 = pil_loader(self.source_images[idx]).resize((128, 128))
+            if self.transforms is not None:
+                source_img_128 = self.transforms(source_img_128)
+            condition_128_tensor_li = []
+            if self.label_transforms is not None:
+                for condition in self.condition128:
+                    condition_128_tensor_li.append(self.label_transforms(condition).cuda())
+            return source_img_128.cuda(), condition_128_tensor_li
+
+    def __len__(self):
+        if self.split is "train":
+            return len(self.label_pairs)
+        else:
+            return len(self.source_images)

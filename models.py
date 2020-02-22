@@ -242,7 +242,7 @@ class Discriminator(nn.Module):
             nf_mult_prev = nf_mult
             nf_mult = min(2 ** n, 8)
             if n == 1:
-                cf = 1
+                cf = 5
             else:
                 cf = 0
             sequence += [

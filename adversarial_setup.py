@@ -75,7 +75,7 @@ class GenAdvNet(pl.LightningModule):
         self.image_size = (image_size, image_size)
         self.batch_size = batch_size
 
-        self.generator = ResnetGenerator(4, 3, 64, norm_layer=torch.nn.BatchNorm2d, use_dropout=False, n_blocks=9)
+        self.generator = ResnetGenerator(8, 3, 64, norm_layer=torch.nn.BatchNorm2d, use_dropout=False, n_blocks=9)
         self.discriminator = Discriminator(3)
         self.classifier = AgeClassifier()
 
@@ -100,14 +100,14 @@ class GenAdvNet(pl.LightningModule):
         return self.generator(x)
 
     def training_step(self, batch, batch_idx, optimizer_idx):
-        src_image_cond, true_image, true_condition, false_condition, true_label = batch
+        source_img_128, true_label_img, true_label_128, true_label_64, fake_label_64, true_label = batch
         # Will write later
         if optimizer_idx == 0:
-            self.aged_image = self.forward(src_image_cond)
+            self.aged_image = self.forward(torch.cat([source_img_128, true_label_128]))
             # Get age prediction
             gen_age, gen_features = self.classifier(self.aged_image)
-            _, src_features = self.classifier(src_image_cond[:, :3, ...])
-            d3_logit = self.discriminator(self.aged_image, true_condition)
+            _, src_features = self.classifier(source_img_128)
+            d3_logit = self.discriminator(self.aged_image, true_label_128)
 
             # Get generator losses
             b, c, h, w = d3_logit.shape
@@ -128,9 +128,9 @@ class GenAdvNet(pl.LightningModule):
 
         if optimizer_idx == 1:
             # Get logits from discriminator model
-            d1_logit = self.discriminator(true_image, true_condition)
-            d2_logit = self.discriminator(true_image, false_condition)
-            d3_logit = self.discriminator(self.aged_image.detach(), true_condition)
+            d1_logit = self.discriminator(true_label_128, true_label_64)
+            d2_logit = self.discriminator(true_label_img, fake_label_64)
+            d3_logit = self.discriminator(self.aged_image.detach(), true_label_64)
 
             # Calculate losses
             b, c, h, w = d3_logit.shape
@@ -144,21 +144,21 @@ class GenAdvNet(pl.LightningModule):
 
             # log sampled images
             if batch_idx % 200 == 0:
-                grid = torchvision.utils.make_grid(src_image_cond[:6, :3, ...],
+                grid = torchvision.utils.make_grid(source_img_128,
                                                    normalize=True,
                                                    range=(0, 1),
                                                    scale_each=True)
-                self.logger.experiment.add_image('source_image', grid, 0)
+                self.logger.experiment.add_image('source_image', grid, batch_idx)
                 grid = torchvision.utils.make_grid(self.aged_image[:6],
                                                    normalize=True,
                                                    range=(0, 1),
                                                    scale_each=True)
-                self.logger.experiment.add_image('generated_images', grid, 0)
-                grid = torchvision.utils.make_grid(true_image[:6],
+                self.logger.experiment.add_image('generated_images', grid, batch_idx)
+                grid = torchvision.utils.make_grid(true_label_img,
                                                    normalize=True,
                                                    range=(0, 1),
                                                    scale_each=True)
-                self.logger.experiment.add_image('target_images', grid, 0)
+                self.logger.experiment.add_image('target_images', grid, batch_idx)
 
             tqdm_dict = {'d_loss': d_loss}
             output = OrderedDict({
@@ -175,27 +175,15 @@ class GenAdvNet(pl.LightningModule):
         torch.save(self.discriminator.state_dict(), 'model_weights/disc.pth')
 
     def configure_optimizers(self):
-        return [torch.optim.AdamW(self.parameters(), lr=1e-4, weight_decay=1e-6),
-                torch.optim.AdamW(self.parameters(), lr=1e-4, weight_decay=1e-6)], []
+        return [torch.optim.Adam(self.parameters(), lr=1e-4),
+                torch.optim.Adam(self.parameters(), lr=1e-4)], []
 
     @pl.data_loader
     def train_dataloader(self):
         return DataLoader(DataLoaderGAN(image_dir=self.image_dir,
                                         text_dir=self.text_dir,
-                                        image_size=self.image_size,
-                                        is_train=True),
+                                        batch_size=self.batch_size),
                           batch_size=self.batch_size,
                           num_workers=4,
                           shuffle=True,
-                          drop_last=True)
-
-    @pl.data_loader
-    def val_dataloader(self):
-        return DataLoader(DataLoaderGAN(image_dir=self.image_dir,
-                                        text_dir=self.text_dir,
-                                        image_size=self.image_size,
-                                        is_train=False),
-                          batch_size=self.batch_size,
-                          num_workers=4,
-                          shuffle=False,
                           drop_last=True)
