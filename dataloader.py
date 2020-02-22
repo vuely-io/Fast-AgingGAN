@@ -47,11 +47,14 @@ class DataLoaderAge(Dataset):
 
 
 class DataLoaderGAN(Dataset):
-    def __init__(self, image_dir, text_dir, batch_size=32, split="train", transforms=None):
+    def __init__(self, image_dir, text_dir, batch_size=32, split="train"):
         self.image_dir = image_dir
         self.text_dir = text_dir
         self.batch_size = batch_size
         self.split = split
+        self.transforms = transforms.Compose([
+            transforms.ToTensor()
+        ])
 
         self.condition128 = []
         full_one = np.ones((128, 128), dtype=np.float32)
@@ -125,7 +128,6 @@ class DataLoaderGAN(Dataset):
         # define pointer
         self.train_group_pointer = [0, 0, 0, 0, 0]
         self.source_pointer = 0
-        self.transforms = transforms
 
     def __getitem__(self, idx):
         if self.split is "train":
@@ -170,9 +172,6 @@ class DataLoaderGAN(Dataset):
             if self.transforms is not None:
                 source_img_128 = self.transforms(source_img_128)
             condition_128_tensor_li = []
-            if self.label_transforms is not None:
-                for condition in self.condition128:
-                    condition_128_tensor_li.append(self.label_transforms(condition).cuda())
             return source_img_128.cuda(), condition_128_tensor_li
 
     def __len__(self):
