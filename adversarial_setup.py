@@ -149,7 +149,7 @@ class GenAdvNet(pl.LightningModule):
                                                    range=(0, 1),
                                                    scale_each=True)
                 self.logger.experiment.add_image('source_image', grid, batch_idx)
-                grid = torchvision.utils.make_grid(self.aged_image[:6],
+                grid = torchvision.utils.make_grid(self.aged_image,
                                                    normalize=True,
                                                    range=(0, 1),
                                                    scale_each=True)
