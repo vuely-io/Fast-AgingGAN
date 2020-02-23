@@ -1,5 +1,3 @@
-import os
-
 import torch
 import torch.nn.functional as F
 import torchvision
@@ -68,7 +66,7 @@ class AgeModule(object):
                     total_steps += 1
 
             total_loss = total_loss / total_steps
-            total_accuracy = total_accuracy / total_steps
+            total_accuracy = total_accuracy / (self.batch_size * total_steps)
             print('val_loss', total_loss, 'val_acc', total_accuracy)
             self.writer.add_scalar('val_loss', total_loss, epoch)
             self.writer.add_scalar('val_acc', total_accuracy, epoch)
