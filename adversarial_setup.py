@@ -55,7 +55,7 @@ class AgeModule(object):
 
                 if step % 50 == 0:
                     print('train_loss', loss.item())
-                    self.writer.add_scalar('train_loss', loss.item())
+                    self.writer.add_scalar('train_loss', loss.item(), len(train_queue) * epoch + step)
                     self.writer.flush()
 
             total_steps, total_loss, total_accuracy = 0, 0, 0
@@ -70,8 +70,8 @@ class AgeModule(object):
             total_loss = total_loss / total_steps
             total_accuracy = total_accuracy / total_steps
             print('val_loss', total_loss, 'val_acc', total_accuracy)
-            self.writer.add_scalar('val_loss', total_loss)
-            self.writer.add_scalar('val_acc', total_accuracy)
+            self.writer.add_scalar('val_loss', total_loss, epoch)
+            self.writer.add_scalar('val_acc', total_accuracy, epoch)
             self.writer.flush()
 
             if total_loss < best_loss:
@@ -86,12 +86,13 @@ class AgeModule(object):
 
 
 class GenAdvNet(object):
-    def __init__(self, image_dir, text_dir, image_size, batch_size):
+    def __init__(self, image_dir, text_dir, image_size, batch_size, epochs=50):
         super(GenAdvNet, self).__init__()
         self.image_dir = image_dir
         self.text_dir = text_dir
         self.image_size = (image_size, image_size)
         self.batch_size = batch_size
+        self.epochs = epochs
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         self.generator = ResnetGenerator(input_nc=8,
@@ -126,77 +127,78 @@ class GenAdvNet(object):
                                  shuffle=True,
                                  drop_last=True)
 
-        for step, batch in enumerate(train_queue):
-            batch = [x.to(self.device) for x in batch]
-            source_img_128, true_label_img, true_label_128, true_label_64, fake_label_64, true_label = batch
-            # Train discriminator
-            self.discriminator.zero_grad()
-            # Obtain aged image from generator
-            self.aged_image = self.generator(torch.cat([source_img_128, true_label_128], dim=1))
-            # Calculate loss on all real batch
-            d1_logit = self.discriminator(true_label_img, true_label_64)
-            d2_logit = self.discriminator(true_label_img, fake_label_64)
-            d3_logit = self.discriminator(self.aged_image.detach(), true_label_64)
+        for epoch in range(self.epochs):
+            for step, batch in enumerate(train_queue):
+                batch = [x.to(self.device) for x in batch]
+                source_img_128, true_label_img, true_label_128, true_label_64, fake_label_64, true_label = batch
+                # Train discriminator
+                self.discriminator.zero_grad()
+                # Obtain aged image from generator
+                self.aged_image = self.generator(torch.cat([source_img_128, true_label_128], dim=1))
+                # Calculate loss on all real batch
+                d1_logit = self.discriminator(true_label_img, true_label_64)
+                d2_logit = self.discriminator(true_label_img, fake_label_64)
+                d3_logit = self.discriminator(self.aged_image.detach(), true_label_64)
 
-            # Do label smoothing and create targets:
-            b, c, h, w = d1_logit.shape
-            valid_target = torch.ones(d1_logit.shape) - torch.empty(b, c, h, w).uniform_(0, 0.1)
-            fake_target = torch.empty(b, c, h, w).uniform_(0.0, 0.1)
+                # Do label smoothing and create targets:
+                b, c, h, w = d1_logit.shape
+                valid_target = torch.ones(d1_logit.shape) - torch.empty(b, c, h, w).uniform_(0, 0.1)
+                fake_target = torch.empty(b, c, h, w).uniform_(0.0, 0.1)
 
-            # Calculate all real loss
-            d1_real_loss = self.criterion_bce(d1_logit, valid_target.to(self.device))
-            # Calculate real image, fake condition loss
-            d2_fake_loss = self.criterion_bce(d2_logit, fake_target.to(self.device))
-            # Calculate fake image, real condition loss
-            d3_fake_loss = self.criterion_bce(d3_logit, fake_target.to(self.device))
-            # Calculate the average loss
-            d_loss = 0.5 * (d1_real_loss + 0.5 * (d2_fake_loss + d3_fake_loss))
-            # Calculate gradients wrt all losses
-            d_loss.backward()
-            # Apply the gradient update
-            self.d_optim.step()
+                # Calculate all real loss
+                d1_real_loss = self.criterion_bce(d1_logit, valid_target.to(self.device))
+                # Calculate real image, fake condition loss
+                d2_fake_loss = self.criterion_bce(d2_logit, fake_target.to(self.device))
+                # Calculate fake image, real condition loss
+                d3_fake_loss = self.criterion_bce(d3_logit, fake_target.to(self.device))
+                # Calculate the average loss
+                d_loss = 0.5 * (d1_real_loss + 0.5 * (d2_fake_loss + d3_fake_loss))
+                # Calculate gradients wrt all losses
+                d_loss.backward()
+                # Apply the gradient update
+                self.d_optim.step()
 
-            # Train the generator
-            self.generator.zero_grad()
-            # Get age prediction
-            gen_age, gen_features = self.classifier(self.aged_image)
-            _, src_features = self.classifier(source_img_128)
-            # Get adversarial loss
-            d3_logit = self.discriminator(self.aged_image, true_label_64)
-            # Label Smoothing
-            b, c, h, w = d3_logit.shape
-            valid_target = torch.ones(d3_logit.shape) - torch.empty(b, c, h, w).uniform_(0, 0.1)
-            # Get losses
-            d3_real_loss = self.criterion_bce(d3_logit, valid_target.to(self.device))
-            age_loss = self.criterion_ce(gen_age, true_label)
-            feature_loss = self.criterion_mse(gen_features.view(b, -1), src_features.view(b, -1)) * 1e-4
-            # Get avg loss
-            g_loss = (d3_real_loss + age_loss + feature_loss)
-            # Calculate gradients
-            g_loss.backward()
-            # Apply update to the generator
-            self.g_optim.step()
-            # log sampled images
-            if step % 200 == 0:
-                print('g_loss', g_loss.item(), 'd_loss', d_loss.item())
-                self.writer.add_scalar('g_loss', g_loss.item())
-                self.writer.add_scalar('d_loss', d_loss.item())
-                grid = torchvision.utils.make_grid(source_img_128,
-                                                   normalize=True,
-                                                   range=(0, 1),
-                                                   scale_each=True)
-                self.writer.add_image('source_image', grid, step)
-                grid = torchvision.utils.make_grid(self.aged_image,
-                                                   normalize=True,
-                                                   range=(0, 1),
-                                                   scale_each=True)
-                self.writer.add_image('generated_images', grid, step)
-                grid = torchvision.utils.make_grid(true_label_img,
-                                                   normalize=True,
-                                                   range=(0, 1),
-                                                   scale_each=True)
-                self.writer.add_image('target_images', grid, step)
-                self.writer.flush()
-                # Save the weights
-                torch.save(self.generator.state_dict(), 'models/gen.pth')
-                torch.save(self.discriminator.state_dict(), 'models/disc.pth')
+                # Train the generator
+                self.generator.zero_grad()
+                # Get age prediction
+                gen_age, gen_features = self.classifier(self.aged_image)
+                _, src_features = self.classifier(source_img_128)
+                # Get adversarial loss
+                d3_logit = self.discriminator(self.aged_image, true_label_64)
+                # Label Smoothing
+                b, c, h, w = d3_logit.shape
+                valid_target = torch.ones(d3_logit.shape) - torch.empty(b, c, h, w).uniform_(0, 0.1)
+                # Get losses
+                d3_real_loss = self.criterion_bce(d3_logit, valid_target.to(self.device))
+                age_loss = self.criterion_ce(gen_age, true_label)
+                feature_loss = self.criterion_mse(gen_features.view(b, -1), src_features.view(b, -1)) * 1e-4
+                # Get avg loss
+                g_loss = (d3_real_loss + age_loss + feature_loss)
+                # Calculate gradients
+                g_loss.backward()
+                # Apply update to the generator
+                self.g_optim.step()
+                # log sampled images
+                if step % 200 == 0:
+                    print('g_loss', g_loss.item(), 'd_loss', d_loss.item())
+                    self.writer.add_scalar('g_loss', g_loss.item())
+                    self.writer.add_scalar('d_loss', d_loss.item())
+                    grid = torchvision.utils.make_grid(source_img_128,
+                                                       normalize=True,
+                                                       range=(0, 1),
+                                                       scale_each=True)
+                    self.writer.add_image('source_image', grid, len(train_queue) * epoch + step)
+                    grid = torchvision.utils.make_grid(self.aged_image,
+                                                       normalize=True,
+                                                       range=(0, 1),
+                                                       scale_each=True)
+                    self.writer.add_image('generated_images', grid, len(train_queue) * epoch + step)
+                    grid = torchvision.utils.make_grid(true_label_img,
+                                                       normalize=True,
+                                                       range=(0, 1),
+                                                       scale_each=True)
+                    self.writer.add_image('target_images', grid, len(train_queue) * epoch + step)
+                    self.writer.flush()
+                    # Save the weights
+                    torch.save(self.generator.state_dict(), 'models/gen.pth')
+                    torch.save(self.discriminator.state_dict(), 'models/disc.pth')
