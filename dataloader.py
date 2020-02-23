@@ -35,10 +35,9 @@ class DataLoaderAge(Dataset):
         Args:
             idx: The index of the image and label to read.
         """
-        choice = random.randint(0, 1)
-        image = Image.open(self.image_paths[idx][choice])
+        image = Image.open(self.image_paths[idx])
         image = image.resize(self.image_size)
-        age = int(self.image_labels[idx][choice])
+        age = int(self.image_labels[idx])
 
         if self.transforms is not None:
             image = self.transforms(image)
