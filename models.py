@@ -1,8 +1,8 @@
+import functools
+
 import torch
 import torch.nn as nn
-from torchvision.models import vgg16
-
-import functools
+from torchvision.models import resnet18
 
 
 class ResnetBlock(nn.Module):
@@ -67,7 +67,8 @@ class ResnetGenerator(nn.Module):
     We adapt Torch code and idea from Justin Johnson's neural style transfer project(https://github.com/jcjohnson/fast-neural-style)
     """
 
-    def __init__(self, input_nc, output_nc, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, padding_type='reflect'):
+    def __init__(self, input_nc, output_nc, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6,
+                 padding_type='reflect'):
         """Construct a Resnet-based generator
         Parameters:
             input_nc (int)      -- the number of channels in input images
@@ -78,7 +79,7 @@ class ResnetGenerator(nn.Module):
             n_blocks (int)      -- the number of ResNet blocks
             padding_type (str)  -- the name of padding layer in conv layers: reflect | replicate | zero
         """
-        assert(n_blocks >= 0)
+        assert (n_blocks >= 0)
         super(ResnetGenerator, self).__init__()
         if type(norm_layer) == functools.partial:
             use_bias = norm_layer.func == nn.InstanceNorm2d
@@ -98,8 +99,9 @@ class ResnetGenerator(nn.Module):
                       nn.ReLU(True)]
 
         mult = 2 ** n_downsampling
-        for i in range(n_blocks):       # add ResNet blocks
-            model += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)]
+        for i in range(n_blocks):  # add ResNet blocks
+            model += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout,
+                                  use_bias=use_bias)]
 
         for i in range(n_downsampling):  # add upsampling layers
             model += [nn.UpsamplingBilinear2d(scale_factor=2),
@@ -246,7 +248,8 @@ class Discriminator(nn.Module):
             else:
                 cf = 0
             sequence += [
-                nn.Conv2d(cf + ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
+                nn.Conv2d(cf + ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2, padding=padw,
+                          bias=use_bias),
                 norm_layer(ndf * nf_mult),
                 nn.LeakyReLU(0.2, True)
             ]
@@ -271,27 +274,20 @@ class Discriminator(nn.Module):
 class AgeClassifier(nn.Module):
     def __init__(self):
         super(AgeClassifier, self).__init__()
-        self.model = vgg16(pretrained=True, progress=True)
+        self.model = resnet18(pretrained=True, progress=True)
         self.model = nn.Sequential(*list(self.model.children())[:-2])
-        self.global_pool = nn.AdaptiveAvgPool2d((4, 4))
-        self.fc1 = nn.Linear(4 * 4 * 512, 256, bias=True)
-        self.relu = nn.ReLU(inplace=True)
-        self.drop = nn.Dropout(p=0.5)
-        self.fc2 = nn.Linear(256, 256, bias=True)
-        self.final = nn.Linear(256, 5, bias=True)
+        self.pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(512, 5, bias=True)
 
     def forward(self, x):
         """
         Args:
             x: Tensor, the input to extract features from.
-
         Returns:
             x: The predicted class logits.
             features: The final conv features of the image.
         """
         b, _, _, _ = x.shape
         features = self.model(x)
-        x = self.relu(self.fc1(self.global_pool(features).view(b, -1)))
-        x = self.relu(self.fc2(self.drop(x)))
-        x = self.final(x)
+        x = self.fc(self.pool(features).view(b, -1))
         return x, features

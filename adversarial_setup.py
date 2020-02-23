@@ -116,7 +116,7 @@ class GenAdvNet(object):
             # Train discriminator
             self.discriminator.zero_grad()
             # Obtain aged image from generator
-            self.aged_image = self.forward(torch.cat([source_img_128, true_label_128], dim=1))
+            self.aged_image = self.generator(torch.cat([source_img_128, true_label_128], dim=1))
             # Calculate loss on all real batch
             d1_logit = self.discriminator(true_label_img, true_label_64)
             d2_logit = self.discriminator(true_label_img, fake_label_64)
@@ -162,6 +162,8 @@ class GenAdvNet(object):
             self.g_optim.step()
             # log sampled images
             if step % 200 == 0:
+                self.writer.add_scalar('g_loss', g_loss.item())
+                self.writer.add_image('d_loss', d_loss.item())
                 grid = torchvision.utils.make_grid(source_img_128,
                                                    normalize=True,
                                                    range=(0, 1),
@@ -177,6 +179,7 @@ class GenAdvNet(object):
                                                    range=(0, 1),
                                                    scale_each=True)
                 self.writer.add_image('target_images', grid, step)
+                self.writer.flush()
                 # Save the weights
                 torch.save(self.generator.state_dict(), 'models/gen.pth')
                 torch.save(self.discriminator.state_dict(), 'models/disc.pth')
