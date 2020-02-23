@@ -56,6 +56,7 @@ class AgeModule(object):
                 if step % 50 == 0:
                     print('train_loss', loss.item())
                     self.writer.add_scalar('train_loss', loss.item())
+                    self.writer.flush()
 
             total_steps, total_loss, total_accuracy = 0, 0, 0
             with torch.no_grad():
@@ -71,6 +72,7 @@ class AgeModule(object):
             print('val_loss', total_loss, 'val_acc', total_accuracy)
             self.writer.add_scalar('val_loss', total_loss)
             self.writer.add_scalar('val_acc', total_accuracy)
+            self.writer.flush()
 
             if total_loss < best_loss:
                 best_loss = total_loss
