@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 from torchvision.datasets.folder import pil_loader
 
-from utils import read_image_label_pair_txt
+from utils import read_image_label_pair_txt, read_image_label_txt
 
 
 class DataLoaderAge(Dataset):
@@ -20,7 +20,7 @@ class DataLoaderAge(Dataset):
             text_dir: str, path to the directory with data split txt files.
             image_size: tuple, (Height, Width), size of images to train on.
         """
-        self.image_labels, self.image_paths = read_image_label_pair_txt(image_dir, text_dir, is_train)
+        self.image_labels, self.image_paths = read_image_label_txt(image_dir, text_dir, is_train)
         self.image_size = image_size
         self.transforms = transforms.Compose([
             transforms.RandomHorizontalFlip(p=0.5),
