@@ -1,5 +1,5 @@
 import os
-from collections import OrderedDict
+from tensorboardX import SummaryWriter
 
 import pytorch_lightning as pl
 import torch
@@ -91,99 +91,92 @@ class GenAdvNet(pl.LightningModule):
         self.classifier.load_state_dict(new_state_dict)
         for p in self.classifier.parameters():
             p.requires_grad = False
+        self.classifier.eval()
 
         self.criterion_bce = torch.nn.BCEWithLogitsLoss()
         self.criterion_mse = torch.nn.MSELoss()
         self.criterion_ce = torch.nn.CrossEntropyLoss()
 
-    def forward(self, x):
-        return self.generator(x)
+        self.d_optim = torch.optim.Adam(params=self.discriminator.parameters(), lr=1e-4)
+        self.g_optim = torch.optim.Adam(params=self.generator.parameters(), lr=1e-4)
 
-    def training_step(self, batch, batch_idx, optimizer_idx):
-        source_img_128, true_label_img, true_label_128, true_label_64, fake_label_64, true_label = batch
-        # Will write later
-        if optimizer_idx == 0:
+        self.writer = SummaryWriter()
+
+    def fit(self):
+        train_queue = DataLoader(DataLoaderGAN(image_dir=self.image_dir,
+                                               text_dir=self.text_dir,
+                                               batch_size=self.batch_size),
+                                 batch_size=self.batch_size,
+                                 num_workers=4,
+                                 shuffle=True,
+                                 drop_last=True)
+
+        for step, batch in enumerate(train_queue):
+            source_img_128, true_label_img, true_label_128, true_label_64, fake_label_64, true_label = batch
+            # Train discriminator
+            self.discriminator.zero_grad()
+            # Obtain aged image from generator
             self.aged_image = self.forward(torch.cat([source_img_128, true_label_128], dim=1))
-            # Get age prediction
-            gen_age, gen_features = self.classifier(self.aged_image)
-            _, src_features = self.classifier(source_img_128)
-            d3_logit = self.discriminator(self.aged_image, true_label_64)
-
-            # Get generator losses
-            b, c, h, w = d3_logit.shape
-            valid_target = torch.ones(d3_logit.shape) - torch.empty(b, c, h, w).uniform_(0, 0.1)
-            d3_real_loss = self.criterion_bce(d3_logit, valid_target.cuda())
-            age_loss = self.criterion_ce(gen_age, true_label)
-            feature_loss = self.criterion_mse(gen_features.view(b, -1), src_features.view(b, -1))
-
-            g_loss = (d3_real_loss + age_loss + feature_loss)
-
-            tqdm_dict = {'g_loss': g_loss}
-            output = OrderedDict({
-                'loss': g_loss,
-                'progress_bar': tqdm_dict,
-                'log': tqdm_dict
-            })
-            return output
-
-        if optimizer_idx == 1:
-            # Get logits from discriminator model
+            # Calculate loss on all real batch
             d1_logit = self.discriminator(true_label_img, true_label_64)
             d2_logit = self.discriminator(true_label_img, fake_label_64)
             d3_logit = self.discriminator(self.aged_image.detach(), true_label_64)
 
-            # Calculate losses
+            # Do label smoothing and create targets:
+            b, c, h, w = d1_logit.shape
+            valid_target = torch.ones(d1_logit.shape) - torch.empty(b, c, h, w).uniform_(0, 0.1)
+            fake_target = torch.empty(b, c, h, w).uniform_(0.0, 0.1)
+
+            # Calculate all real loss
+            d1_real_loss = self.criterion_bce(d1_logit, valid_target.cuda())
+            # Calculate real image, fake condition loss
+            d2_fake_loss = self.criterion_bce(d2_logit, fake_target.cuda())
+            # Calculate fake image, real condition loss
+            d3_fake_loss = self.criterion_bce(d3_logit, fake_target.cuda())
+            # Calculate the average loss
+            d_loss = 0.5 * (d1_real_loss + 0.5 * (d2_fake_loss + d3_fake_loss))
+            # Calculate gradients wrt all losses
+            d_loss.backward()
+            # Apply the gradient update
+            self.d_optim.step()
+
+            # Train the generator
+            self.generator.zero_grad()
+            # Get age prediction
+            gen_age, gen_features = self.classifier(self.aged_image)
+            _, src_features = self.classifier(source_img_128)
+            # Get adversarial loss
+            d3_logit = self.discriminator(self.aged_image, true_label_64)
+            # Label Smoothing
             b, c, h, w = d3_logit.shape
             valid_target = torch.ones(d3_logit.shape) - torch.empty(b, c, h, w).uniform_(0, 0.1)
-            fake_target = torch.empty(b, c, h, w).uniform_(0.9, 1.0)
-            d1_real_loss = self.criterion_bce(d1_logit, valid_target.cuda())
-            d2_fake_loss = self.criterion_bce(d2_logit, fake_target.cuda())
-            d3_fake_loss = self.criterion_bce(d3_logit, fake_target.cuda())
-
-            d_loss = 1. / 2 * (d1_real_loss + 1. / 2 * (d2_fake_loss + d3_fake_loss))
-
+            # Get losses
+            d3_real_loss = self.criterion_bce(d3_logit, valid_target.cuda())
+            age_loss = self.criterion_ce(gen_age, true_label)
+            feature_loss = self.criterion_mse(gen_features.view(b, -1), src_features.view(b, -1))
+            # Get avg loss
+            g_loss = (d3_real_loss + age_loss + feature_loss)
+            # Calculate gradients
+            g_loss.backward()
+            # Apply update to the generator
+            self.g_optim.step()
             # log sampled images
-            if batch_idx % 200 == 0:
+            if step % 200 == 0:
                 grid = torchvision.utils.make_grid(source_img_128,
                                                    normalize=True,
                                                    range=(0, 1),
                                                    scale_each=True)
-                self.logger.experiment.add_image('source_image', grid, batch_idx)
+                self.writer.add_image('source_image', grid, step)
                 grid = torchvision.utils.make_grid(self.aged_image,
                                                    normalize=True,
                                                    range=(0, 1),
                                                    scale_each=True)
-                self.logger.experiment.add_image('generated_images', grid, batch_idx)
+                self.writer.add_image('generated_images', grid, step)
                 grid = torchvision.utils.make_grid(true_label_img,
                                                    normalize=True,
                                                    range=(0, 1),
                                                    scale_each=True)
-                self.logger.experiment.add_image('target_images', grid, batch_idx)
-
-            tqdm_dict = {'d_loss': d_loss}
-            output = OrderedDict({
-                'loss': d_loss,
-                'progress_bar': tqdm_dict,
-                'log': tqdm_dict
-            })
-            return output
-
-    def on_epoch_end(self):
-        if not os.path.exists('model_weights'):
-            os.makedirs('model_weights')
-        torch.save(self.generator.state_dict(), 'model_weights/gen.pth')
-        torch.save(self.discriminator.state_dict(), 'model_weights/disc.pth')
-
-    def configure_optimizers(self):
-        return [torch.optim.Adam(self.parameters(), lr=1e-4),
-                torch.optim.Adam(self.parameters(), lr=1e-4)], []
-
-    @pl.data_loader
-    def train_dataloader(self):
-        return DataLoader(DataLoaderGAN(image_dir=self.image_dir,
-                                        text_dir=self.text_dir,
-                                        batch_size=self.batch_size),
-                          batch_size=self.batch_size,
-                          num_workers=4,
-                          shuffle=True,
-                          drop_last=True)
+                self.writer.add_image('target_images', grid, step)
+                # Save the weights
+                torch.save(self.generator.state_dict(), 'models/gen.pth')
+                torch.save(self.discriminator.state_dict(), 'models/disc.pth')

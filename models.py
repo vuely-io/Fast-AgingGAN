@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torchvision.models import resnet18
+from torchvision.models import vgg16
 
 import functools
 
@@ -271,10 +271,14 @@ class Discriminator(nn.Module):
 class AgeClassifier(nn.Module):
     def __init__(self):
         super(AgeClassifier, self).__init__()
-        self.model = resnet18(pretrained=True, progress=True)
+        self.model = vgg16(pretrained=True, progress=True)
         self.model = nn.Sequential(*list(self.model.children())[:-2])
-        self.bn_last = nn.BatchNorm2d(512)
-        self.fc = nn.Linear(4 * 4 * 512, 5, bias=True)
+        self.global_pool = nn.AdaptiveAvgPool2d((4, 4))
+        self.fc1 = nn.Linear(4 * 4 * 512, 256, bias=True)
+        self.relu = nn.ReLU(inplace=True)
+        self.drop = nn.Dropout(p=0.5)
+        self.fc2 = nn.Linear(256, 256, bias=True)
+        self.final = nn.Linear(256, 5, bias=True)
 
     def forward(self, x):
         """
@@ -287,5 +291,7 @@ class AgeClassifier(nn.Module):
         """
         b, _, _, _ = x.shape
         features = self.model(x)
-        x = self.fc(self.bn_last(features).view(b, -1))
+        x = self.relu(self.fc1(self.global_pool(features)))
+        x = self.relu(self.fc2(self.drop(x)))
+        x = self.final(x)
         return x, features
