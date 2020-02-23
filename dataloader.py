@@ -20,7 +20,7 @@ class DataLoaderAge(Dataset):
             text_dir: str, path to the directory with data split txt files.
             image_size: tuple, (Height, Width), size of images to train on.
         """
-        self.image_labels, self.image_paths = read_image_label_txt(image_dir, text_dir, is_train)
+        self.image_paths, self.image_labels = read_image_label_txt(image_dir, text_dir, is_train)
         self.image_size = image_size
         self.transforms = transforms.Compose([
             transforms.RandomHorizontalFlip(p=0.5),
