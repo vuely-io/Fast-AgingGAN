@@ -32,12 +32,11 @@ def main():
                                    batch_size=args.batch_size * 4)
         trainer.fit(age_classifier)
 
-    trainer = Trainer(max_epochs=args.epochs, gpus=[0], early_stop_callback=False)
     gan = GenAdvNet(image_dir=args.image_dir,
                     text_dir=args.text_dir,
                     image_size=args.image_size,
                     batch_size=args.batch_size)
-    trainer.fit(gan)
+    gan.fit()
 
 
 if __name__ == '__main__':

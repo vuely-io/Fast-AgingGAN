@@ -67,7 +67,7 @@ class AgeModule(pl.LightningModule):
                           drop_last=True)
 
 
-class GenAdvNet(pl.LightningModule):
+class GenAdvNet(object):
     def __init__(self, image_dir, text_dir, image_size, batch_size):
         super(GenAdvNet, self).__init__()
         self.image_dir = image_dir
