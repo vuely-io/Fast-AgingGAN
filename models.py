@@ -276,8 +276,8 @@ class AgeClassifier(nn.Module):
         super(AgeClassifier, self).__init__()
         self.model = resnet18(pretrained=True, progress=True)
         self.model = nn.Sequential(*list(self.model.children())[:-2])
-        self.pool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512, 5, bias=True)
+        self.pool = nn.AdaptiveAvgPool2d((4, 4))
+        self.fc = nn.Linear(4 * 4 * 512, 5, bias=True)
 
     def forward(self, x):
         """

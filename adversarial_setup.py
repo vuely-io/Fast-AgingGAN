@@ -1,70 +1,86 @@
 import os
-from tensorboardX import SummaryWriter
 
-import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 import torchvision
+from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 
 from dataloader import DataLoaderAge, DataLoaderGAN
 from models import ResnetGenerator, Discriminator, AgeClassifier
 
 
-class AgeModule(pl.LightningModule):
-    def __init__(self, image_dir, text_dir, image_size, batch_size):
-        super(AgeModule, self).__init__()
+class AgeModule(object):
+    def __init__(self, image_dir, text_dir, image_size, batch_size, epochs=30):
         self.model = AgeClassifier()
         self.image_dir = image_dir
         self.text_dir = text_dir
         self.image_size = (image_size, image_size)
         self.batch_size = batch_size
+        self.epochs = epochs
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = AgeClassifier().to(self.device)
+        self.writer = SummaryWriter()
 
-    def forward(self, x):
-        x, features = self.model(x)
-        return x, features
+    def fit(self):
+        train_queue = DataLoader(DataLoaderAge(image_dir=self.image_dir,
+                                               text_dir=self.text_dir,
+                                               image_size=self.image_size,
+                                               is_train=True),
+                                 batch_size=self.batch_size,
+                                 num_workers=4,
+                                 shuffle=True,
+                                 drop_last=True)
 
-    def training_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat, _ = self.forward(x)
-        loss = F.cross_entropy(y_hat, y)
-        tensorboard_logs = {'train_loss': loss}
-        return {'loss': loss, 'log': tensorboard_logs}
+        val_queue = DataLoader(DataLoaderAge(image_dir=self.image_dir,
+                                             text_dir=self.text_dir,
+                                             image_size=self.image_size,
+                                             is_train=False),
+                               batch_size=self.batch_size,
+                               num_workers=4,
+                               shuffle=False,
+                               drop_last=True)
 
-    def validation_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat, _ = self.forward(x)
-        return {'val_loss': F.cross_entropy(y_hat, y)}
+        opt = torch.optim.AdamW(self.model.parameters(), lr=1e-3, weight_decay=1e-3)
+        counter = 0
+        best_loss = float('inf')
+        for epoch in range(self.epochs):
+            for step, (x, y) in enumerate(train_queue):
+                x, y = x.to(self.device), y.to(self.device)
+                self.model.zero_grad()
+                y_hat, _ = self.model(x)
+                loss = F.cross_entropy(y_hat, y)
+                loss.backward()
+                opt.step()
 
-    def validation_end(self, outputs):
-        avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-        tensorboard_logs = {'val_loss': avg_loss}
-        return {'avg_val_loss': avg_loss, 'log': tensorboard_logs}
+                if step % 50 == 0:
+                    print('train_loss', loss.item())
+                    self.writer.add_scalar('train_loss', loss.item())
 
-    def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=1e-3, weight_decay=1e-3)
+            total_steps, total_loss, total_accuracy = 0, 0, 0
+            with torch.no_grad():
+                for step, (x, y) in enumerate(val_queue):
+                    x, y = x.to(self.device), y.to(self.device)
+                    y_hat, _ = self.model(x)
+                    total_loss += F.cross_entropy(y_hat, y).item()
+                    total_accuracy += (torch.argmax(y_hat, dim=1) == y).sum().item()
+                    total_steps += 1
 
-    @pl.data_loader
-    def train_dataloader(self):
-        return DataLoader(DataLoaderAge(image_dir=self.image_dir,
-                                        text_dir=self.text_dir,
-                                        image_size=self.image_size,
-                                        is_train=True),
-                          batch_size=self.batch_size,
-                          num_workers=4,
-                          shuffle=True,
-                          drop_last=True)
+            total_loss = total_loss / total_steps
+            total_accuracy = total_accuracy / total_steps
+            print('val_loss', total_loss, 'val_acc', total_accuracy)
+            self.writer.add_scalar('val_loss', total_loss)
+            self.writer.add_scalar('val_acc', total_accuracy)
 
-    @pl.data_loader
-    def val_dataloader(self):
-        return DataLoader(DataLoaderAge(image_dir=self.image_dir,
-                                        text_dir=self.text_dir,
-                                        image_size=self.image_size,
-                                        is_train=False),
-                          batch_size=self.batch_size,
-                          num_workers=4,
-                          shuffle=False,
-                          drop_last=True)
+            if total_loss < best_loss:
+                best_loss = total_loss
+                counter = 0
+                # Save weights after every epoch
+                torch.save(self.model.state_dict(), 'models/classifier_best.pth')
+
+            if counter == 7:
+                break
+            counter += 1
 
 
 class GenAdvNet(object):
@@ -74,21 +90,18 @@ class GenAdvNet(object):
         self.text_dir = text_dir
         self.image_size = (image_size, image_size)
         self.batch_size = batch_size
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.generator = ResnetGenerator(8, 3, 64, norm_layer=torch.nn.BatchNorm2d, use_dropout=False, n_blocks=9)
-        self.discriminator = Discriminator(3)
-        self.classifier = AgeClassifier()
+        self.generator = ResnetGenerator(input_nc=8,
+                                         output_nc=3,
+                                         ngf=64,
+                                         norm_layer=torch.nn.BatchNorm2d,
+                                         use_dropout=False,
+                                         n_blocks=9).to(self.device)
+        self.discriminator = Discriminator(3).to(self.device)
+        self.classifier = AgeClassifier().to(self.device)
 
-        # TODO find a nicer way to do this:
-        ckpt_dir = './lightning_logs/version_0/checkpoints/'
-        ckpt = os.path.join(ckpt_dir, os.listdir(ckpt_dir)[0])
-        ckpt = torch.load(ckpt)
-        new_state_dict = {}
-        for k, v in ckpt['state_dict'].items():
-            # Remove the mode.model repetition from the key name
-            new_state_dict[k[6:]] = v
-
-        self.classifier.load_state_dict(new_state_dict)
+        self.classifier.load_state_dict(torch.load('models/classifier_best.pth'))
         for p in self.classifier.parameters():
             p.requires_grad = False
         self.classifier.eval()
@@ -112,6 +125,7 @@ class GenAdvNet(object):
                                  drop_last=True)
 
         for step, batch in enumerate(train_queue):
+            batch = [x.to(self.device) for x in batch]
             source_img_128, true_label_img, true_label_128, true_label_64, fake_label_64, true_label = batch
             # Train discriminator
             self.discriminator.zero_grad()
@@ -128,11 +142,11 @@ class GenAdvNet(object):
             fake_target = torch.empty(b, c, h, w).uniform_(0.0, 0.1)
 
             # Calculate all real loss
-            d1_real_loss = self.criterion_bce(d1_logit, valid_target.cuda())
+            d1_real_loss = self.criterion_bce(d1_logit, valid_target.to(self.device))
             # Calculate real image, fake condition loss
-            d2_fake_loss = self.criterion_bce(d2_logit, fake_target.cuda())
+            d2_fake_loss = self.criterion_bce(d2_logit, fake_target.to(self.device))
             # Calculate fake image, real condition loss
-            d3_fake_loss = self.criterion_bce(d3_logit, fake_target.cuda())
+            d3_fake_loss = self.criterion_bce(d3_logit, fake_target.to(self.device))
             # Calculate the average loss
             d_loss = 0.5 * (d1_real_loss + 0.5 * (d2_fake_loss + d3_fake_loss))
             # Calculate gradients wrt all losses
@@ -151,9 +165,9 @@ class GenAdvNet(object):
             b, c, h, w = d3_logit.shape
             valid_target = torch.ones(d3_logit.shape) - torch.empty(b, c, h, w).uniform_(0, 0.1)
             # Get losses
-            d3_real_loss = self.criterion_bce(d3_logit, valid_target.cuda())
+            d3_real_loss = self.criterion_bce(d3_logit, valid_target.to(self.device))
             age_loss = self.criterion_ce(gen_age, true_label)
-            feature_loss = self.criterion_mse(gen_features.view(b, -1), src_features.view(b, -1))
+            feature_loss = self.criterion_mse(gen_features.view(b, -1), src_features.view(b, -1)) * 1e-4
             # Get avg loss
             g_loss = (d3_real_loss + age_loss + feature_loss)
             # Calculate gradients
@@ -162,8 +176,9 @@ class GenAdvNet(object):
             self.g_optim.step()
             # log sampled images
             if step % 200 == 0:
+                print('g_loss', g_loss.item(), 'd_loss', d_loss.item())
                 self.writer.add_scalar('g_loss', g_loss.item())
-                self.writer.add_image('d_loss', d_loss.item())
+                self.writer.add_scalar('d_loss', d_loss.item())
                 grid = torchvision.utils.make_grid(source_img_128,
                                                    normalize=True,
                                                    range=(0, 1),
