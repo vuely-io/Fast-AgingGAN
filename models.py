@@ -291,7 +291,7 @@ class AgeClassifier(nn.Module):
         """
         b, _, _, _ = x.shape
         features = self.model(x)
-        x = self.relu(self.fc1(self.global_pool(features)))
+        x = self.relu(self.fc1(self.global_pool(features).view(b, -1)))
         x = self.relu(self.fc2(self.drop(x)))
         x = self.final(x)
         return x, features
