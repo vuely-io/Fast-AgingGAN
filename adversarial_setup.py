@@ -39,7 +39,7 @@ class AgeModule(object):
                                shuffle=False,
                                drop_last=True)
 
-        opt = torch.optim.AdamW(self.model.parameters(), lr=1e-3, weight_decay=1e-3)
+        opt = torch.optim.Adam(self.model.parameters(), lr=1e-3)
         counter = 0
         best_loss = float('inf')
         for epoch in range(self.epochs):
@@ -174,8 +174,8 @@ class GenAdvNet(object):
                 # log sampled images
                 if step % 200 == 0:
                     print('g_loss', g_loss.item(), 'd_loss', d_loss.item())
-                    self.writer.add_scalar('g_loss', g_loss.item())
-                    self.writer.add_scalar('d_loss', d_loss.item())
+                    self.writer.add_scalar('g_loss', g_loss.item(), len(train_queue) * epoch + step)
+                    self.writer.add_scalar('d_loss', d_loss.item(), len(train_queue) * epoch + step)
                     grid = torchvision.utils.make_grid(source_img_128,
                                                        normalize=True,
                                                        range=(0, 1),
