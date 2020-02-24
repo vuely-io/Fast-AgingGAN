@@ -17,8 +17,6 @@ parser.add_argument('--batch_size', default=12, type=int, help='Batch size for t
 parser.add_argument('--epochs', default=50, type=int, help='Number of epochs for training')
 parser.add_argument('--image_size', default=128, type=int, help='Face image input size.')
 parser.add_argument('--lr', default=1e-4, type=float, help='Learning rate for optimizers.')
-parser.add_argument('--save_iter', default=200, type=int,
-                    help='The number of iterations to save the tensorboard summaries and models.')
 
 
 def main():
@@ -28,7 +26,7 @@ def main():
         age_classifier = AgeModule(image_dir=args.image_dir,
                                    text_dir=args.text_dir,
                                    image_size=args.image_size,
-                                   batch_size=args.batch_size * 4,
+                                   batch_size=args.batch_size * 8,
                                    epochs=30)
         age_classifier.fit()
 

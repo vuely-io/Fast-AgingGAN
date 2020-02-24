@@ -5,7 +5,7 @@ from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 
 from dataloader import DataLoaderAge, DataLoaderGAN
-from models import ResnetGenerator, Discriminator, AgeClassifier
+from models import MobileGenerator, Discriminator, AgeClassifier
 
 
 class AgeModule(object):
@@ -93,12 +93,7 @@ class GenAdvNet(object):
         self.epochs = epochs
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.generator = ResnetGenerator(input_nc=8,
-                                         output_nc=3,
-                                         ngf=64,
-                                         norm_layer=torch.nn.BatchNorm2d,
-                                         use_dropout=False,
-                                         n_blocks=9).to(self.device)
+        self.generator = MobileGenerator(6).to(self.device)
         self.discriminator = Discriminator(3).to(self.device)
         self.classifier = AgeClassifier().to(self.device)
 
