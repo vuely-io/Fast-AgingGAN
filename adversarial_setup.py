@@ -162,15 +162,14 @@ class GenAdvNet(object):
                 valid_target = torch.ones(d1_logit.shape)
                 # Get losses
                 d3_real_loss = self.criterion_mse(d3_logit, valid_target.to(self.device)) * self.w_gan_loss
-                d3_real_loss.backward()
                 age_loss = self.criterion_ce(gen_age, true_label) * self.w_age_loss
-                age_loss.backward()
                 feature_loss = self.criterion_mse(gen_features, src_features) * self.w_feat_loss
-                feature_loss.backward()
+                # Get avg loss
+                g_loss = (d3_real_loss + age_loss + feature_loss) / 3.0
+                # Backprop
+                g_loss.backward()
                 # Apply update to the generator
                 self.g_optim.step()
-                # Get avg loss
-                g_loss = (d3_real_loss + age_loss + feature_loss)
                 # log sampled images
                 if step % 200 == 0:
                     print('g_loss', g_loss.item(), 'd_loss', d_loss.item())
