@@ -93,7 +93,7 @@ class MobileGenerator(nn.Module):
             x: Tensor, input image of shape: (B, C, H, W)
         """
         y = self.relu(self.bn1(self.conv1(x)))
-        x = self.relu(self.bn2(self.conv2(y)))
+        x = self.relu(self.bn2(self.conv2(y.clone())))
         x = self.relu(self.bn3(self.conv3(x)))
         for layer_num in range(self.num_blocks):
             x = self.vertebrae[layer_num](x)
