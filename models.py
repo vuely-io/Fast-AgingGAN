@@ -66,23 +66,25 @@ class MobileGenerator(nn.Module):
         super(MobileGenerator, self).__init__()
         self.num_blocks = num_blocks
 
-        self.conv1 = nn.Conv2d(4, 32, kernel_size=3, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
+        self.conv1 = nn.Conv2d(4, 32, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1)
         self.bn1 = nn.BatchNorm2d(32)
-        self.bn2 = nn.BatchNorm2d(64)
+        self.bn2 = nn.BatchNorm2d(32)
+        self.bn3 = nn.BatchNorm2d(32)
         self.relu = nn.LeakyReLU(inplace=True)
 
         self.vertebrae = nn.ModuleList(
-            [InvertedResidual(64, 64, stride=1, expand_ratio=6) for _ in range(self.num_blocks)])
+            [InvertedResidual(32, 32, stride=1, expand_ratio=6) for _ in range(self.num_blocks)])
 
-        self.trunk_conv = nn.Conv2d(64, 256, kernel_size=3, stride=1, padding=1)
-        self.bn3 = nn.BatchNorm2d(256)
+        self.trunk_conv = nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1)
+        self.bn3 = nn.BatchNorm2d(32)
 
-        self.upconv1 = nn.PixelShuffle(upscale_factor=2)
-        self.conv_exp1 = nn.Conv2d(64, 256, kernel_size=3, stride=1, padding=1)
-        self.upconv2 = nn.PixelShuffle(upscale_factor=2)
-        self.conv_exp2 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
-        self.final_conv = nn.Conv2d(64, 3, kernel_size=3, stride=1, padding=1)
+        self.upconv1 = nn.UpsamplingBilinear2d(scale_factor=2)
+        self.conv_exp1 = nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1)
+        self.upconv2 = nn.UpsamplingBilinear2d(scale_factor=2)
+        self.conv_exp2 = nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1)
+        self.final_conv = nn.Conv2d(32, 3, kernel_size=3, stride=1, padding=1)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -90,13 +92,15 @@ class MobileGenerator(nn.Module):
         Args:
             x: Tensor, input image of shape: (B, C, H, W)
         """
-        x = self.relu(self.bn1(self.conv1(x)))
-        x = self.relu(self.bn2(self.conv2(x)))
+        y = self.relu(self.bn1(self.conv1(x)))
+        x = self.relu(self.bn2(self.conv2(y)))
+        x = self.relu(self.bn3(self.conv3(x)))
         for layer_num in range(self.num_blocks):
             x = self.vertebrae[layer_num](x)
         x = self.relu(self.bn3(self.trunk_conv(x)))
         x = self.relu(self.conv_exp1(self.upconv1(x)))
         x = self.relu(self.conv_exp2(self.upconv2(x)))
+        x += y
         x = self.sigmoid(self.final_conv(x))
 
         return x
