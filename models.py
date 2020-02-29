@@ -26,7 +26,7 @@ class InvertedResidual(nn.Module):
                 # dw
                 nn.Conv2d(hidden_dim, hidden_dim, 3, stride, 1, groups=hidden_dim, bias=False),
                 nn.BatchNorm2d(hidden_dim),
-                nn.ReLU6(inplace=True),
+                nn.LeakyReLU(inplace=True),
                 # pw-linear
                 nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(oup),
@@ -36,11 +36,11 @@ class InvertedResidual(nn.Module):
                 # pw
                 nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(hidden_dim),
-                nn.ReLU6(inplace=True),
+                nn.LeakyReLU(inplace=True),
                 # dw
                 nn.Conv2d(hidden_dim, hidden_dim, 3, stride, 1, groups=hidden_dim, bias=False),
                 nn.BatchNorm2d(hidden_dim),
-                nn.ReLU6(inplace=True),
+                nn.LeakyReLU(inplace=True),
                 # pw-linear
                 nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(oup),
@@ -70,6 +70,7 @@ class MobileGenerator(nn.Module):
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
         self.bn1 = nn.BatchNorm2d(32)
         self.bn2 = nn.BatchNorm2d(64)
+        self.relu = nn.LeakyReLU(inplace=True)
 
         self.vertebrae = nn.ModuleList(
             [InvertedResidual(64, 64, stride=1, expand_ratio=6) for _ in range(self.num_blocks)])
@@ -89,13 +90,15 @@ class MobileGenerator(nn.Module):
         Args:
             x: Tensor, input image of shape: (B, C, H, W)
         """
-        x = self.bn1(self.conv1(x))
-        x = self.bn2(self.conv2(x))
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.relu(self.bn2(self.conv2(x)))
+        feat = x.clone()
         for layer_num in range(self.num_blocks):
             x = self.vertebrae[layer_num](x)
-        x = self.bn3(self.trunk_conv(x))
-        x = self.conv_exp1(self.upconv1(x))
-        x = self.conv_exp2(self.upconv2(x))
+        x += feat
+        x = self.relu(self.bn3(self.trunk_conv(x)))
+        x = self.relu(self.conv_exp1(self.upconv1(x)))
+        x = self.relu(self.conv_exp2(self.upconv2(x)))
         x = self.sigmoid(self.final_conv(x))
 
         return x
