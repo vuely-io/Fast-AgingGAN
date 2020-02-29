@@ -92,10 +92,8 @@ class MobileGenerator(nn.Module):
         """
         x = self.relu(self.bn1(self.conv1(x)))
         x = self.relu(self.bn2(self.conv2(x)))
-        feat = x.clone()
         for layer_num in range(self.num_blocks):
             x = self.vertebrae[layer_num](x)
-        x += feat
         x = self.relu(self.bn3(self.trunk_conv(x)))
         x = self.relu(self.conv_exp1(self.upconv1(x)))
         x = self.relu(self.conv_exp2(self.upconv2(x)))
