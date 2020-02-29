@@ -72,7 +72,7 @@ class MobileGenerator(nn.Module):
         self.bn1 = nn.BatchNorm2d(32)
         self.bn2 = nn.BatchNorm2d(32)
         self.bn3 = nn.BatchNorm2d(32)
-        self.relu = nn.LeakyReLU(inplace=True)
+        self.relu = nn.LeakyReLU()
 
         self.vertebrae = nn.ModuleList(
             [InvertedResidual(32, 32, stride=1, expand_ratio=6) for _ in range(self.num_blocks)])
@@ -92,9 +92,8 @@ class MobileGenerator(nn.Module):
         Args:
             x: Tensor, input image of shape: (B, C, H, W)
         """
-        x = self.relu(self.bn1(self.conv1(x)))
-        y = x.clone()
-        x = self.relu(self.bn2(self.conv2(x)))
+        y = self.relu(self.bn1(self.conv1(x)))
+        x = self.relu(self.bn2(self.conv2(y)))
         x = self.relu(self.bn3(self.conv3(x)))
         for layer_num in range(self.num_blocks):
             x = self.vertebrae[layer_num](x)
