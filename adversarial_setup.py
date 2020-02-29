@@ -108,9 +108,9 @@ class GenAdvNet(object):
         self.d_optim = torch.optim.Adam(params=self.discriminator.parameters(), lr=1e-4)
         self.g_optim = torch.optim.Adam(params=self.generator.parameters(), lr=1e-4)
 
-        self.w_gan_loss = 4
-        self.w_age_loss = 2
-        self.w_feat_loss = 1e-4
+        self.w_gan_loss = 70
+        self.w_age_loss = 20
+        self.w_feat_loss = 5e-5
 
         self.writer = SummaryWriter()
 
@@ -165,8 +165,8 @@ class GenAdvNet(object):
                 age_loss = self.criterion_ce(gen_age, true_label) * self.w_age_loss
                 feature_loss = self.criterion_mse(gen_features, src_features) * self.w_feat_loss
                 # Get avg loss
-                g_loss = (d3_real_loss + age_loss + feature_loss) / 3.0
-                # Backprop
+                g_loss = d3_real_loss + age_loss + feature_loss
+                # Backprop the g_loss
                 g_loss.backward()
                 # Apply update to the generator
                 self.g_optim.step()
