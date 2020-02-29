@@ -1,8 +1,7 @@
 import os
+
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 from argparse import ArgumentParser
-
-from pytorch_lightning import Trainer
 
 from adversarial_setup import AgeModule, GenAdvNet
 

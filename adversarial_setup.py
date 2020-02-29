@@ -102,12 +102,15 @@ class GenAdvNet(object):
             p.requires_grad = False
         self.classifier.eval()
 
-        self.criterion_bce = torch.nn.BCEWithLogitsLoss()
         self.criterion_mse = torch.nn.MSELoss()
         self.criterion_ce = torch.nn.CrossEntropyLoss()
 
         self.d_optim = torch.optim.Adam(params=self.discriminator.parameters(), lr=1e-4)
         self.g_optim = torch.optim.Adam(params=self.generator.parameters(), lr=1e-4)
+
+        self.w_gan_loss = 4
+        self.w_age_loss = 2
+        self.w_feat_loss = 1e-4
 
         self.writer = SummaryWriter()
 
@@ -127,25 +130,22 @@ class GenAdvNet(object):
                 # Train discriminator
                 self.discriminator.zero_grad()
                 # Obtain aged image from generator
-                self.aged_image = self.generator(torch.cat([source_img_128, true_label_128], dim=1))
+                aged_image = self.generator(torch.cat([source_img_128, true_label_128], dim=1))
                 # Calculate loss on all real batch
                 d1_logit = self.discriminator(true_label_img, true_label_64)
                 d2_logit = self.discriminator(true_label_img, fake_label_64)
-                d3_logit = self.discriminator(self.aged_image.detach(), true_label_64)
-
+                d3_logit = self.discriminator(aged_image.detach(), true_label_64)
                 # Do label smoothing and create targets:
-                b, c, h, w = d1_logit.shape
-                valid_target = torch.ones(d1_logit.shape) - torch.empty(b, c, h, w).uniform_(0, 0.1)
-                fake_target = torch.empty(b, c, h, w).uniform_(0.0, 0.1)
-
+                valid_target = torch.ones(d1_logit.shape)
+                fake_target = torch.zeros(d1_logit.shape)
                 # Calculate all real loss
-                d1_real_loss = self.criterion_bce(d1_logit, valid_target.to(self.device))
+                d1_real_loss = self.criterion_mse(d1_logit, valid_target.to(self.device))
                 # Calculate real image, fake condition loss
-                d2_fake_loss = self.criterion_bce(d2_logit, fake_target.to(self.device))
+                d2_fake_loss = self.criterion_mse(d2_logit, fake_target.to(self.device))
                 # Calculate fake image, real condition loss
-                d3_fake_loss = self.criterion_bce(d3_logit, fake_target.to(self.device))
+                d3_fake_loss = self.criterion_mse(d3_logit, fake_target.to(self.device))
                 # Calculate the average loss
-                d_loss = 0.5 * (d1_real_loss + 0.5 * (d2_fake_loss + d3_fake_loss))
+                d_loss = 0.5 * (d1_real_loss + 0.5 * (d2_fake_loss + d3_fake_loss)) * self.w_gan_loss
                 # Calculate gradients wrt all losses
                 d_loss.backward()
                 # Apply the gradient update
@@ -154,23 +154,23 @@ class GenAdvNet(object):
                 # Train the generator
                 self.generator.zero_grad()
                 # Get age prediction
-                gen_age, gen_features = self.classifier(self.aged_image)
+                gen_age, gen_features = self.classifier(aged_image)
                 _, src_features = self.classifier(source_img_128)
                 # Get adversarial loss
-                d3_logit = self.discriminator(self.aged_image, true_label_64)
+                d3_logit = self.discriminator(aged_image, true_label_64)
                 # Label Smoothing
-                b, c, h, w = d3_logit.shape
-                valid_target = torch.ones(d3_logit.shape) - torch.empty(b, c, h, w).uniform_(0, 0.1)
+                valid_target = torch.ones(d1_logit.shape)
                 # Get losses
-                d3_real_loss = self.criterion_bce(d3_logit, valid_target.to(self.device))
-                age_loss = self.criterion_ce(gen_age, true_label)
-                feature_loss = self.criterion_mse(gen_features.view(b, -1), src_features.view(b, -1)) * 1e-4
-                # Get avg loss
-                g_loss = (d3_real_loss + age_loss + feature_loss)
-                # Calculate gradients
-                g_loss.backward()
+                d3_real_loss = self.criterion_mse(d3_logit, valid_target.to(self.device)) * self.w_gan_loss
+                d3_real_loss.backward()
+                age_loss = self.criterion_ce(gen_age, true_label) * self.w_age_loss
+                age_loss.backward()
+                feature_loss = self.criterion_mse(gen_features, src_features) * self.w_feat_loss
+                feature_loss.backward()
                 # Apply update to the generator
                 self.g_optim.step()
+                # Get avg loss
+                g_loss = (d3_real_loss + age_loss + feature_loss)
                 # log sampled images
                 if step % 200 == 0:
                     print('g_loss', g_loss.item(), 'd_loss', d_loss.item())
@@ -181,7 +181,7 @@ class GenAdvNet(object):
                                                        range=(0, 1),
                                                        scale_each=True)
                     self.writer.add_image('source_image', grid, len(train_queue) * epoch + step)
-                    grid = torchvision.utils.make_grid(self.aged_image,
+                    grid = torchvision.utils.make_grid(aged_image,
                                                        normalize=True,
                                                        range=(0, 1),
                                                        scale_each=True)
