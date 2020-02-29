@@ -66,7 +66,7 @@ class MobileGenerator(nn.Module):
         super(MobileGenerator, self).__init__()
         self.num_blocks = num_blocks
 
-        self.conv1 = nn.Conv2d(5, 32, kernel_size=3, stride=2, padding=1)
+        self.conv1 = nn.Conv2d(4, 32, kernel_size=3, stride=2, padding=1)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
         self.bn1 = nn.BatchNorm2d(32)
         self.bn2 = nn.BatchNorm2d(64)
