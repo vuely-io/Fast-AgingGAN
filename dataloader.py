@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 from torchvision.datasets.folder import pil_loader
 
-from utils import read_image_label_pair_txt, read_image_label_txt
+from utils import read_image_label_txt
 
 
 class DataLoaderAge(Dataset):
@@ -156,13 +156,6 @@ class DataLoaderGAN(Dataset):
                 true_label_128 = self.transforms(true_label_128)
                 true_label_64 = self.transforms(true_label_64)
                 fake_label_64 = self.transforms(fake_label_64)
-
-            # source img 128 : use it to generate different age face -> then resize to (227,227)
-            # to extract feature, compile with source img 227
-            # ture_label_img : img in target age group -> use to train discriminator
-            # true_label_128 : use this condition to generate
-            # true_label_64 and fake_label_64 : use this condition to discrimination
-            # true_label : label
 
             return source_img_128, true_label_img, true_label_128, true_label_64, fake_label_64, true_label
         else:

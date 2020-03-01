@@ -104,12 +104,13 @@ class GenAdvNet(object):
 
         self.criterion_mse = torch.nn.MSELoss()
         self.criterion_ce = torch.nn.CrossEntropyLoss()
+        self.criterion_bce = torch.nn.BCEWithLogitsLoss()
 
         self.d_optim = torch.optim.Adam(params=self.discriminator.parameters(), lr=1e-4)
         self.g_optim = torch.optim.Adam(params=self.generator.parameters(), lr=1e-4)
 
-        self.w_gan_loss = 70
-        self.w_age_loss = 20
+        self.w_gan_loss = 30
+        self.w_age_loss = 15
         self.w_feat_loss = 5e-5
 
         self.writer = SummaryWriter()
@@ -136,14 +137,14 @@ class GenAdvNet(object):
                 d2_logit = self.discriminator(true_label_img, fake_label_64)
                 d3_logit = self.discriminator(aged_image.detach(), true_label_64)
                 # Do label smoothing and create targets:
-                valid_target = torch.ones(d1_logit.shape)
-                fake_target = torch.zeros(d1_logit.shape)
+                valid_target = torch.empty(d1_logit.shape).uniform_(0.9, 1.0)
+                fake_target = torch.empty(d1_logit.shape).uniform_(0.0, 0.1)
                 # Calculate all real loss
-                d1_real_loss = self.criterion_mse(d1_logit, valid_target.to(self.device))
+                d1_real_loss = self.criterion_bce(d1_logit, valid_target.to(self.device))
                 # Calculate real image, fake condition loss
-                d2_fake_loss = self.criterion_mse(d2_logit, fake_target.to(self.device))
+                d2_fake_loss = self.criterion_bce(d2_logit, fake_target.to(self.device))
                 # Calculate fake image, real condition loss
-                d3_fake_loss = self.criterion_mse(d3_logit, fake_target.to(self.device))
+                d3_fake_loss = self.criterion_bce(d3_logit, fake_target.to(self.device))
                 # Calculate the average loss
                 d_loss = 0.5 * (d1_real_loss + 0.5 * (d2_fake_loss + d3_fake_loss)) * self.w_gan_loss
                 # Calculate gradients wrt all losses
@@ -161,7 +162,7 @@ class GenAdvNet(object):
                 # Label Smoothing
                 valid_target = torch.ones(d1_logit.shape)
                 # Get losses
-                d3_real_loss = self.criterion_mse(d3_logit, valid_target.to(self.device)) * self.w_gan_loss
+                d3_real_loss = self.criterion_bce(d3_logit, valid_target.to(self.device)) * self.w_gan_loss
                 age_loss = self.criterion_ce(gen_age, true_label) * self.w_age_loss
                 feature_loss = self.criterion_mse(gen_features, src_features) * self.w_feat_loss
                 # Get avg loss
@@ -191,6 +192,7 @@ class GenAdvNet(object):
                                                        scale_each=True)
                     self.writer.add_image('target_images', grid, len(train_queue) * epoch + step)
                     self.writer.flush()
+                if step % 10000 == 0:
                     # Save the weights
-                    torch.save(self.generator.state_dict(), 'models/gen.pth')
-                    torch.save(self.discriminator.state_dict(), 'models/disc.pth')
+                    torch.save(self.generator.state_dict(), f'models/gen_{step}.pth')
+                    torch.save(self.discriminator.state_dict(), f'models/disc_{step}.pth')
