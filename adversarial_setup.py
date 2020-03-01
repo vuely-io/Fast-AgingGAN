@@ -107,7 +107,7 @@ class GenAdvNet(object):
         self.criterion_bce = torch.nn.BCEWithLogitsLoss()
 
         self.d_optim = torch.optim.Adam(params=self.discriminator.parameters(), lr=1e-4)
-        self.g_optim = torch.optim.Adam(params=self.generator.parameters(), lr=1e-4)
+        self.g_optim = torch.optim.Adam(params=self.generator.parameters(), lr=3e-4)
 
         self.w_gan_loss = 30
         self.w_age_loss = 15
