@@ -1,218 +1,179 @@
-from utils import read_image_label_txt, read_image_label_pair_txt
-import tensorflow as tf
+import os
 import random
 
+import numpy as np
+from PIL import Image
+from torch.utils.data import Dataset
+from torchvision import transforms
+from torchvision.datasets.folder import pil_loader
 
-class DataLoaderAge(object):
-    """Data Loader for the age classifier, that prepares a tf data object for training."""
+from utils import read_image_label_pair_txt, read_image_label_txt
 
-    def __init__(self, image_dir, text_file, image_size):
-        """
-        Initializes the dataloader.
+
+class DataLoaderAge(Dataset):
+    """DataSet for the age classifier."""
+
+    def __init__(self, image_dir, text_dir, image_size, is_train=True):
+        """Initializes the data loader for training the age classifier
         Args:
-            image_dir: The path to the directory containing high resolution images.
-            text_file: Integer, filename and age labe text file.
-            image_size: The size of images to train on.
-        Returns:
-            The dataloader object.
+            image_dir: str, path to directory where images are located.
+            text_dir: str, path to the directory with data split txt files.
+            image_size: tuple, (Height, Width), size of images to train on.
         """
-        self.image_paths, self.image_labels = read_image_label_txt(image_dir, text_file)
+        self.image_paths, self.image_labels = read_image_label_txt(image_dir, text_dir, is_train)
         self.image_size = image_size
+        self.transforms = transforms.Compose([
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.ToTensor()
+        ])
 
-    def _parse_image(self, image_path, image_label):
-        """
-        Function that loads the images given the path.
-        Args:
-            image_path: Path to an image file.
-            image_label: Integer label of age category.
-        Returns:
-            image: A tf tensor of the loaded image.
-            image_label: A tf tensor of the loaded age label.
-        """
+    def __len__(self):
+        return len(self.image_paths)
 
-        image = tf.io.read_file(image_path)
-        image = tf.image.decode_jpeg(image, channels=3)
-        image = tf.image.convert_image_dtype(image, tf.float32)
-
-        return image, image_label
-
-    def _resize_image(self, image, label):
-        """Resizes the given image
-        Args:
-            image: tf tensor to resize.
-            label: Image class label.
-        Returns:
-            image: tf tensor of resized image.
-            label: Image class label.
-        """
-
-        image = tf.image.resize(image, [self.image_size, self.image_size])
-
-        return image, label
-
-    def dataset(self, batch_size):
+    def __getitem__(self, idx):
         """
         Args:
-            batch_size: The batch size of the loaded data.
-        returns:
-            dataset: A tf dataset object.
+            idx: The index of the image and label to read.
         """
+        image = Image.open(self.image_paths[idx])
+        image = image.resize(self.image_size)
+        age = int(self.image_labels[idx])
 
-        dataset = tf.data.Dataset.from_tensor_slices((self.image_paths, self.image_labels))
+        if self.transforms is not None:
+            image = self.transforms(image)
 
-        # Read the images
-        dataset = dataset.map(self._parse_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-        # Resize the image
-        dataset = dataset.map(self._resize_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-        # Batch the image
-        dataset = dataset.batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
-
-        return dataset
+        return image, age
 
 
-class DataLoaderGAN(object):
-    """Data Loader for the SR GAN, that prepares a tf data object for training."""
+class DataLoaderGAN(Dataset):
+    def __init__(self, image_dir, text_dir, batch_size=32, split="train"):
+        self.image_dir = image_dir
+        self.text_dir = text_dir
+        self.batch_size = batch_size
+        self.split = split
+        self.transforms = transforms.Compose([
+            transforms.ToTensor()
+        ])
 
-    def __init__(self, image_dir, text_dir, image_size):
-        """
-        Initializes the dataloader.
-        Args:
-            image_dir: The path to the directory containing high resolution images.
-            text_dir: Path to the directory with the all the image list split text files.
-            image_size: Size of the images to train on.
-        Returns:
-            None
-        """
-        self.label_pairs, self.image_pairs = read_image_label_pair_txt(image_dir, text_dir)
-        self.source_images = [x[0] for x in self.image_pairs]
-        random.shuffle(self.source_images)
-        self.image_size = image_size
+        self.condition128 = []
+        full_one = np.ones((128, 128), dtype=np.float32)
+        for i in range(5):
+            self.condition128.append(full_one * i)
 
-    def _parse_image(self, source_path, image_paths, image_labels):
-        """
-        Function that loads the images given the path.
-        Args:
-            source_path: The path to the source image.
-            image_path: List of path to target and non target-images.
-            image_labels: List of targer and non-target image age labels.
-        Returns:
-            source_image: tf tensor of the source image.
-            true_image: tf tensor of the target domain image.
-            true_label: tf tensor of true image class label.
-            false_label: tf tensor of false image class label.
-        """
-        source_image = tf.io.read_file(source_path)
-        true_image = tf.io.read_file(image_paths[0])
+        # define label 64*64 for condition discriminate image
+        self.condition64 = []
+        full_one = np.ones((64, 64), dtype=np.float32)
+        for i in range(5):
+            self.condition64.append(full_one * i)
 
-        source_image = tf.image.decode_jpeg(source_image, channels=3)
-        true_image = tf.image.decode_jpeg(true_image, channels=3)
+        # define label_pairs
+        label_pair_root = os.path.join(self.text_dir, "train_label_pair.txt")
+        with open(label_pair_root, 'r') as f:
+            lines = f.readlines()
+        lines = [line.strip() for line in lines]
+        random.shuffle(lines)
+        self.label_pairs = []
+        for line in lines:
+            label_pair = []
+            items = line.split()
+            label_pair.append(int(items[0]))
+            label_pair.append(int(items[1]))
+            self.label_pairs.append(label_pair)
 
-        source_image = tf.image.convert_image_dtype(source_image, tf.float32)
-        true_image = tf.image.convert_image_dtype(true_image, tf.float32)
+        # define group_images
+        group_lists = [
+            os.path.join(self.text_dir, 'train_age_group_0.txt'),
+            os.path.join(self.text_dir, 'train_age_group_1.txt'),
+            os.path.join(self.text_dir, 'train_age_group_2.txt'),
+            os.path.join(self.text_dir, 'train_age_group_3.txt'),
+            os.path.join(self.text_dir, 'train_age_group_4.txt')
+        ]
 
-        true_label = image_labels[0]
-        false_label = image_labels[1]
+        self.label_group_images = []
+        for i in range(len(group_lists)):
+            with open(group_lists[i], 'r') as f:
+                lines = f.readlines()
+                lines = [line.strip() for line in lines]
+            group_images = []
+            for l in lines:
+                items = l.split()
+                group_images.append(os.path.join(self.image_dir, items[0]))
+            self.label_group_images.append(group_images)
 
-        return source_image, true_image, true_label, false_label
+        # define train.txt
+        if self.split is "train":
+            self.source_images = []  # which use to aging transfer
+            with open(os.path.join(self.text_dir, 'train.txt'), 'r') as f:
+                lines = f.readlines()
+                lines = [line.strip() for line in lines]
+            random.shuffle(lines)
+            for l in lines:
+                items = l.split()
+                self.source_images.append(os.path.join(self.image_dir, items[0]))
+        else:
+            self.source_images = []  # which use to aging transfer
+            with open(os.path.join(self.text_dir, 'test.txt'), 'r') as f:
+                lines = f.readlines()
+                lines = [line.strip() for line in lines]
+            random.shuffle(lines)
+            for l in lines:
+                items = l.split()
+                self.source_images.append(os.path.join(self.image_dir, items[0]))
 
-    def _rescale(self, source_image, true_image, true_label, false_label):
-        """
-        Function that rescales the pixel values to the -1 to 1 range.
-        For use with the generator output tanh function.
-        Args:
-            source_image: tf tensor of the source image.
-            true_image: tf tensor of the target domain image.
-            true_label: tf tensor of true image class label.
-            false_label: tf tensor of false image class label.
-        Returns:
-            source_image: tf tensor of the source image, rescaled to -1 to 1 values..
-            true_image: tf tensor of the target domain image, rescaled to -1 to 1 values.
-            true_label: tf tensor of true image class label.
-            false_label: tf tensor of false image class label.
-        """
-        source_image = source_image * 2.0 - 1.0
-        true_image = true_image * 2.0 - 1.0
+        # define pointer
+        self.train_group_pointer = [0, 0, 0, 0, 0]
+        self.source_pointer = 0
 
-        return source_image, true_image, true_label, false_label
+    def __getitem__(self, idx):
+        if self.split is "train":
+            pair_idx = idx // self.batch_size  # a batch train the same pair
+            true_label = int(self.label_pairs[pair_idx][0])
+            fake_label = int(self.label_pairs[pair_idx][1])
 
-    def _resize(self, source_image, true_image, true_label, false_label):
-        """
-        Function that resizes the image.
-        Args:
-            source_image: tf tensor of the source image.
-            true_image: tf tensor of the target domain image.
-            true_label: tf tensor of true image class label.
-            false_label: tf tensor of false image class label.
-        Returns:
-            source_image: tf tensor of the source image, resized.
-            true_image: tf tensor of the target domain image, resized.
-            true_label: tf tensor of true image class label.
-            false_label: tf tensor of false image class label.
-        """
-        source_image = tf.image.resize(source_image, [self.image_size, self.image_size])
-        true_image = tf.image.resize(true_image, [self.image_size, self.image_size])
+            true_label_128 = self.condition128[true_label]
+            true_label_64 = self.condition64[true_label]
+            fake_label_64 = self.condition64[fake_label]
 
-        return source_image, true_image, true_label, false_label
+            true_label_img = pil_loader(
+                self.label_group_images[true_label][self.train_group_pointer[true_label]]).resize((128, 128))
+            source_img = pil_loader(self.source_images[self.source_pointer])
 
-    def _condition(self, source_image, true_image, true_label, false_label):
-        """
-        Creates image conditioning for aging.
-        Args:
-            source_image: tf tensor of the source image.
-            true_image: tf tensor of the target domain image.
-            true_label: tf tensor of true image class label.
-            false_label: tf tensor of false image class label.
-        Returns:
-            source_conditioned_image: The source image, with depthwise concatenated age condition.
-            true_image: tf tensor of the target domain image.
-            true_condition: tf tensor of the target domain age labels.
-            false_condition: tf tensor of non target domain age labels.
-            true_label: tf tensor of true image class label.
-        """
-        true_condition = tf.tile([true_label], [self.image_size * self.image_size])
-        true_condition = tf.reshape(true_condition, [self.image_size, self.image_size, 1])
-        true_condition = tf.cast(true_condition, tf.float32)
+            source_img_128 = source_img.resize((128, 128))
 
-        false_condition = tf.tile([false_label], [self.image_size * self.image_size // 4])
-        false_condition = tf.reshape(false_condition, [self.image_size // 2, self.image_size // 2, 1])
-        false_condition = tf.cast(false_condition, tf.float32)
+            if self.train_group_pointer[true_label] < len(self.label_group_images[true_label]) - 1:
+                self.train_group_pointer[true_label] += 1
+            else:
+                self.train_group_pointer[true_label] = 0
 
-        source_conditioned_image = tf.concat([source_image, true_condition], axis=-1)
+            if self.source_pointer < len(self.source_images) - 1:
+                self.source_pointer += 1
+            else:
+                self.source_pointer = 0
 
-        true_condition = tf.tile([true_label], [self.image_size * self.image_size // 4])
-        true_condition = tf.reshape(true_condition, [self.image_size // 2, self.image_size // 2, 1])
-        true_condition = tf.cast(true_condition, tf.float32)
+            if self.transforms is not None:
+                true_label_img = self.transforms(true_label_img)
+                source_img_128 = self.transforms(source_img_128)
+                true_label_128 = self.transforms(true_label_128)
+                true_label_64 = self.transforms(true_label_64)
+                fake_label_64 = self.transforms(fake_label_64)
 
-        return source_conditioned_image, true_image, true_condition, false_condition, true_label
+            # source img 128 : use it to generate different age face -> then resize to (227,227)
+            # to extract feature, compile with source img 227
+            # ture_label_img : img in target age group -> use to train discriminator
+            # true_label_128 : use this condition to generate
+            # true_label_64 and fake_label_64 : use this condition to discrimination
+            # true_label : label
 
-    def dataset(self, batch_size):
-        """
-        Returns a tf dataset object with specified mappings.
-        Args:
-            batch_size: Int, The number of elements in a batch returned by the dataset.
-        Returns:
-            dataset: A tf dataset object.
-        """
-        # Values in range -1 - 1
-        # Generate tf dataset from high res image paths.
-        dataset = tf.data.Dataset.from_tensor_slices((self.source_images, self.image_pairs, self.label_pairs))
+            return source_img_128, true_label_img, true_label_128, true_label_64, fake_label_64, true_label
+        else:
+            source_img_128 = pil_loader(self.source_images[idx]).resize((128, 128))
+            if self.transforms is not None:
+                source_img_128 = self.transforms(source_img_128)
+            condition_128_tensor_li = []
+            return source_img_128.cuda(), condition_128_tensor_li
 
-        # Read the images
-        dataset = dataset.map(self._parse_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-        # Resize the image
-        dataset = dataset.map(self._resize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-        # Rescale the values in the input
-        dataset = dataset.map(self._rescale, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-        # Condition the age category on the image
-        dataset = dataset.map(self._condition, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-        # Batch the input, drop remainder to get a defined batch size.
-        # Prefetch the data for optimal GPU utilization.
-        dataset = dataset.batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
-
-        return dataset
+    def __len__(self):
+        if self.split is "train":
+            return len(self.label_pairs)
+        else:
+            return len(self.source_images)
