@@ -110,8 +110,8 @@ class GenAdvNet(object):
         self.g_optim = torch.optim.Adam(params=self.generator.parameters(), lr=3e-4)
 
         self.w_gan_loss = 30
-        self.w_age_loss = 15
-        self.w_feat_loss = 5e-5
+        self.w_age_loss = 30
+        self.w_feat_loss = 1e-5
 
         self.writer = SummaryWriter()
 
@@ -192,7 +192,7 @@ class GenAdvNet(object):
                                                        scale_each=True)
                     self.writer.add_image('target_images', grid, len(train_queue) * epoch + step)
                     self.writer.flush()
-                if step % 10000 == 0:
+                if (len(train_queue) * epoch + step) % 10000 == 0:
                     # Save the weights
                     torch.save(self.generator.state_dict(), f'models/gen_{step}.pth')
                     torch.save(self.discriminator.state_dict(), f'models/disc_{step}.pth')
